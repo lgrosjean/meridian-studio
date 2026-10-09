@@ -8,6 +8,7 @@ const os = require('node:os')
 let folder = join(__dirname, '..', 'examples')
 class TreeItem { constructor(label) { this.label = label } }
 const vscode = {
+  Range: class { constructor(a, b, c, d) { Object.assign(this, { line: a, start: b, endLine: c, end: d }) } },
   TreeItem, MarkdownString: class { constructor(v) { this.value = v } }, ThemeIcon: class { constructor(id) { this.id = id } }, ThemeColor: class {},
   TreeItemCollapsibleState: { None: 0, Collapsed: 1 }, EventEmitter: class { event = () => {}; fire() {} },
   Uri: { from: (u) => u, file: (path) => ({ scheme: 'file', fsPath: path }) },
@@ -15,7 +16,7 @@ const vscode = {
 }
 const load = Module._load
 Module._load = (request, ...rest) => (request === 'vscode' ? vscode : load(request, ...rest))
-const { _columnsOf, _priorsOf, _modelChildren, _folderChildren, _referenceIn } = require('../out/extension.js')
+const { _columnsOf, _priorsOf, _modelChildren, _folderChildren, _referenceIn, _wordRange } = require('../out/extension.js')
 
 const cols = Object.fromEntries(_columnsOf('synthetic').map((c) => [c.label, c]))
 assert.equal(cols.time.description, 'time')
@@ -73,4 +74,8 @@ assert.equal(ref('csv: /data/x.csv\n', 'datasets').file, '/data/x.csv')
 assert.equal(ref('csv: data/x.csv\n', 'datasets').file, '/p/data/x.csv')
 assert.equal(ref('  dataset: nested\nsampling: {}\n', 'models'), undefined) // top-level keys only
 assert.equal(ref('dataset:\n', 'models'), undefined)
+// A data check lands on the line naming its variable: not in a comment, not a longer name that starts like it.
+const yaml = '# channel_1 in a comment\npriors:\n  roi_m:\n    channel_10: { mean: 1, sd: 1 }\n    channel_1: { mean: 2, sd: 1 }\n'
+assert.deepEqual({ ..._wordRange(yaml, 'channel_1') }, { line: 4, start: 4, endLine: 4, end: 13 })
+assert.equal(_wordRange(yaml, 'channel_2'), undefined)
 console.log('ok')

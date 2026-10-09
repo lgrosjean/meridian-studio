@@ -4,6 +4,7 @@ import datetime as dt
 import inspect
 import json
 import os
+import re
 import tempfile
 import time
 from pathlib import Path
@@ -42,6 +43,32 @@ def model_spec(m: dict, data):
     if prior is not None:
         kw["prior"] = prior
     return spec.ModelSpec(**kw)
+
+
+def names_in(data) -> set[str]:
+    """The channels, controls and treatments Meridian knows this data by: what a check can name."""
+    names = set()
+    for coord in ("media_channel", "rf_channel", "organic_media_channel", "organic_rf_channel", "control_variable", "non_media_channel"):
+        values = getattr(data, coord, None)
+        if values is not None:
+            names |= {str(v) for v in np.asarray(values)}
+    return names
+
+
+def variables_of(finding, known: set[str]) -> list[str]:
+    """The variables a data check is about, from its artifact (VIF outliers, correlated pairs…) or its text."""
+    found = []
+    a = finding.associated_artifact
+    for v in vars(a).values() if a is not None else []:
+        if isinstance(v, str):
+            found.append(v)
+        elif isinstance(v, pd.DataFrame) and len(v):
+            flat = v.reset_index()
+            for col in flat.columns:
+                if flat[col].dtype == object:
+                    found += [str(x) for x in flat[col]]
+    found += re.findall(r"[A-Za-z_][\w.-]*", finding.explanation)
+    return sorted({x for x in found if x in known})
 
 
 def window(df: pd.DataFrame, t: str, w: dict | None) -> pd.DataFrame:
@@ -84,12 +111,25 @@ def fit(project: Path, path: str, emit) -> dict:
     t0 = time.time()
     emit(event="phase", name="data", state="run")
     data = input_data(df, d)
-    mmm = model.Meridian(data, model_spec(m, data))
+    known = names_in(data)
+    try:
+        mmm = model.Meridian(data, model_spec(m, data))
+    except ValueError as e:  # Meridian refuses some data outright, e.g. a control that never varies
+        named = [v for v in re.findall(r"'([^']+)'", str(e)) if v in known]
+        if not named:
+            raise
+        emit(event="checks", items=[{"status": "fail", "title": "Data", "text": str(e), "vars": named}])
+        raise Fail(f"Meridian refuses the data: {', '.join(named)} (see Problems)")
     emit(event="phase", name="data", state="done")
 
     eda = mmm.eda_outcomes
     items = [
-        {"status": f.severity.name.lower(), "title": o.check_type.name.replace("_", " ").capitalize(), "text": f.explanation}
+        {
+            "status": f.severity.name.lower(),
+            "title": o.check_type.name.replace("_", " ").capitalize(),
+            "text": f.explanation,
+            "vars": variables_of(f, known),
+        }
         for o in (getattr(eda, x.name) for x in dataclasses.fields(eda))
         for f in o.findings
     ]

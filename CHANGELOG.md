@@ -11,6 +11,10 @@
 - While a fit or an optimization runs: a progress bar atop its view, and the status bar shows its phase and time
   ("Fit national-media-v1 · posterior · 2 min 10"; click for the output). When it ends, a notification says how
   it went, with Show results; the results panel no longer opens by itself.
+- Meridian's data checks go to Problems on the lines naming their variables, in the model and its dataset; data
+  Meridian refuses outright (a control that never varies) is a check too, instead of a crash.
+- Meridian Runs, in the bottom panel: every fit of every model, and a comparison of any two.
+- Fits and optimizations are VS Code tasks (type `meridian`), runnable from Run Task and chainable with `dependsOn`.
 
 ## 0.1.1
 

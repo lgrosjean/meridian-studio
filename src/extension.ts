@@ -10,9 +10,10 @@ import { basename, delimiter, dirname, isAbsolute, join, relative } from 'node:p
 import * as vscode from 'vscode'
 import { parse } from 'yaml'
 import { openPanels, showReport, showResults } from './results'
+import { RunsView, type RunRow } from './runs'
 
 type Root = 'datasets' | 'models' | 'scenarios'
-type Check = { status: 'fail' | 'review' | 'info'; title: string; text: string }
+type Check = { status: 'fail' | 'review' | 'info'; title: string; text: string; vars?: string[] }
 type RunRecord = {
   status: 'Running' | 'Done' | 'Failed'
   startedAt: string
@@ -486,6 +487,49 @@ class Tree implements vscode.TreeDataProvider<vscode.TreeItem> {
 
 const write = (root: Root, name: string, r: RunRecord) => fs.writeFileSync(join(project(), root, `${name}.run.json`), JSON.stringify(r, null, 2) + '\n')
 
+// --- Meridian's data checks, on the lines they are about ----------------------------------------------
+// A check names its variables (channels, controls); each lands where the YAML says that name: the model's
+// line (its prior), else its `dataset:` line, and the dataset's line that maps it. One without names: line 1.
+
+const wordRange = (text: string, word: string): vscode.Range | undefined => {
+  const re = new RegExp(`(?<![\\w.-])${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w.-])`)
+  const lines = text.split(/\r?\n/)
+  for (let i = 0; i < lines.length; i++) {
+    const m = re.exec(lines[i].replace(/#.*$/, ''))
+    if (m) return new vscode.Range(i, m.index, i, m.index + word.length)
+  }
+}
+function placeChecks(problems: vscode.DiagnosticCollection, root: Root, name: string, checks: Check[]) {
+  const severity = { fail: vscode.DiagnosticSeverity.Error, review: vscode.DiagnosticSeverity.Warning, info: vscode.DiagnosticSeverity.Hint }
+  const file = yamlOf(root, name)
+  const text = fs.readFileSync(file, 'utf8')
+  const ref = referenceIn(text, root, project())
+  const dataset = ref?.kind === 'dataset' && fs.existsSync(ref.file) ? { file: ref.file, text: fs.readFileSync(ref.file, 'utf8') } : undefined
+  const here: vscode.Diagnostic[] = []
+  const there: vscode.Diagnostic[] = []
+  const diag = (range: vscode.Range, c: Check, note = '') => {
+    const d = new vscode.Diagnostic(range, `${c.text}${note}`, severity[c.status] ?? severity.info)
+    d.source = 'Meridian'
+    d.code = c.title
+    return d
+  }
+  for (const c of checks) {
+    const vars = c.vars ?? []
+    if (!vars.length) {
+      here.push(diag(new vscode.Range(0, 0, 0, 1), c))
+      continue
+    }
+    for (const v of vars) {
+      const own = wordRange(text, v)
+      here.push(own ? diag(own, c) : diag(ref ? new vscode.Range(ref.line, ref.start, ref.line, ref.end) : new vscode.Range(0, 0, 0, 1), c, ` (${v})`))
+      const mapped = dataset && wordRange(dataset.text, v)
+      if (mapped) there.push(diag(mapped, c, ` (from fitting ${name})`))
+    }
+  }
+  problems.set(vscode.Uri.file(file), here)
+  if (dataset) problems.set(vscode.Uri.file(dataset.file), there)
+}
+
 // --- Runs in progress: the view's progress bar, the status bar, the notification at the end ------------
 
 type Live = { verb: string; name: string; started: number; phase: string }
@@ -513,7 +557,10 @@ function showLive() {
   ticker ??= setInterval(showLive, 1000)
 }
 
-async function run(runner: string, out: vscode.OutputChannel, problems: vscode.DiagnosticCollection, root: Root, name: string, refresh: () => void) {
+/** Where a run started as a task writes, and how it tells the task it ended. */
+type Term = { write: (line: string) => void; end: (ok: boolean) => void }
+
+async function run(runner: string, out: vscode.OutputChannel, problems: vscode.DiagnosticCollection, root: Root, name: string, refresh: () => void, term?: Term) {
   const kind = KINDS[root]
   const key = `${root}/${name}`
   if (children.has(key)) throw new Error(`${name} is already running`)
@@ -525,6 +572,10 @@ async function run(runner: string, out: vscode.OutputChannel, problems: vscode.D
       if (!csv || !fs.existsSync(csv)) throw new Error(`${p}: its csv is missing (${csv ?? 'no csv:'})`)
     } else if (recordOf(kind.parent, p)?.status !== 'Done') throw new Error(`${KINDS[kind.parent].verb} ${p} first`)
   }
+  const say = (line: string) => {
+    out.appendLine(line)
+    term?.write(line)
+  }
   const uv = await ensureUv(out)
   const dir = project()
   const uri = vscode.Uri.file(yamlOf(root, name))
@@ -532,12 +583,14 @@ async function run(runner: string, out: vscode.OutputChannel, problems: vscode.D
   const record: RunRecord = { status: 'Running', startedAt: new Date().toISOString(), fingerprint: fingerprintOf(root, name) }
   write(root, name, record)
   problems.delete(uri)
+  const ref = referenceIn(fs.readFileSync(uri.fsPath, 'utf8'), root, dir)
+  if (ref?.kind === 'dataset') problems.delete(vscode.Uri.file(ref.file))
 
   const mlflow = vscode.workspace.getConfiguration('meridian').get<string>('mlflowTrackingUri')?.trim()
   const env = { ...process.env, PYTHONUNBUFFERED: '1', ...(mlflow && { MLFLOW_TRACKING_URI: mlflow }) }
   const args = ['run', '--project', runner, join(runner, 'runner.py'), kind.command!, dir, `${root}/${name}.yaml`]
-  out.show(true)
-  out.appendLine(`\n$ uv ${args.join(' ')}`)
+  if (!term) out.show(true)
+  say(`\n$ uv ${args.join(' ')}`)
   const child = spawn(uv, args, { cwd: dir, env })
   children.set(key, child)
   const started = Date.now()
@@ -565,21 +618,20 @@ async function run(runner: string, out: vscode.OutputChannel, problems: vscode.D
     try {
       e = JSON.parse(line)
     } catch {
-      return out.appendLine(line)
+      return say(line)
     }
     if (e.event === 'checks' && Array.isArray(e.items)) {
       checks.push(...(e.items as Check[]))
-      const severity = { fail: vscode.DiagnosticSeverity.Error, review: vscode.DiagnosticSeverity.Warning, info: vscode.DiagnosticSeverity.Information }
-      problems.set(uri, checks.map((c) => new vscode.Diagnostic(new vscode.Range(0, 0, 0, 1), c.text ? `${c.title}: ${c.text}` : c.title, severity[c.status] ?? severity.info)))
+      placeChecks(problems, root, name, checks)
     }
     if (e.event === 'done' || e.event === 'error') last = e as typeof last
     if (e.event === 'phase' && e.state === 'run') {
       going.phase = String(e.name)
       showLive()
     }
-    out.appendLine(describe(e))
+    say(describe(e))
   })
-  lines(child.stderr!, (l) => out.appendLine(l))
+  lines(child.stderr!, (l) => say(l))
 
   let finished = false // 'error' and 'close' can both fire
   const finish = (error?: string) => {
@@ -589,7 +641,7 @@ async function run(runner: string, out: vscode.OutputChannel, problems: vscode.D
     live.delete(key)
     stopProgress()
     showLive()
-    if (error) out.appendLine(`Error: ${error}`)
+    if (error) say(`Error: ${error}`)
     const ok = !error && last?.event === 'done'
     const ended: RunRecord = {
       ...record,
@@ -599,6 +651,7 @@ async function run(runner: string, out: vscode.OutputChannel, problems: vscode.D
       ...(checks.length && { checks })
     }
     write(root, name, ended)
+    term?.end(ok)
     refresh()
     results(root, name, false) // a panel already open shows the new results
     // Told when it ends, whatever is in front: a fit can take ten minutes.
@@ -718,6 +771,42 @@ async function remove(i: Item) {
   for (const f of followers(i.root, i.name)) if (fs.existsSync(f)) await vscode.workspace.fs.delete(vscode.Uri.file(f), { useTrash: true })
 }
 
+// --- Fits and optimizations as VS Code tasks ---------------------------------------------------------------
+// type: meridian, file: models/<name>.yaml or scenarios/<name>.yaml. A task runs exactly what Play runs, in the
+// integrated terminal: Terminate stops the runner, Restart reruns it, dependsOn chains a fit and its scenarios.
+
+function makeTasks(start: (root: Root, name: string, term: Term) => Promise<void>) {
+  const task = (file: string, scope: vscode.WorkspaceFolder | vscode.TaskScope = vscode.TaskScope.Workspace, def?: vscode.TaskDefinition) => {
+    const m = file.match(/^(models|scenarios)\/([^/\\]+)\.yaml$/)
+    if (!m) return
+    const [root, name] = [m[1] as Root, m[2]]
+    const t = new vscode.Task(def ?? { type: 'meridian', file }, scope, `${KINDS[root].verb} ${name}`, 'meridian',
+      new vscode.CustomExecution(async (): Promise<vscode.Pseudoterminal> => {
+        const write = new vscode.EventEmitter<string>()
+        const close = new vscode.EventEmitter<number>()
+        return {
+          onDidWrite: write.event,
+          onDidClose: close.event,
+          open: () =>
+            void start(root, name, { write: (l) => write.fire(l.replace(/\r?\n/g, '\r\n') + '\r\n'), end: (ok) => close.fire(ok ? 0 : 1) }).catch((e) => {
+              write.fire(`${e instanceof Error ? e.message : e}\r\n`)
+              close.fire(1)
+            }),
+          close: () => children.get(`${root}/${name}`)?.kill()
+        }
+      }),
+      [] // no problem matcher: Meridian's checks reach Problems directly, and VS Code would ask for one otherwise
+    )
+    t.detail = file
+    return t
+  }
+  return {
+    provideTasks: () =>
+      (['models', 'scenarios'] as Root[]).flatMap((root) => new Tree(root).list().map((i) => task(`${root}/${i.name}.yaml`)!)),
+    resolveTask: (t: vscode.Task) => (typeof t.definition.file === 'string' ? task(t.definition.file, t.scope as vscode.WorkspaceFolder, t.definition) : undefined)
+  } satisfies vscode.TaskProvider
+}
+
 // --- Wiring ---------------------------------------------------------------------------------
 
 export function activate(context: vscode.ExtensionContext) {
@@ -731,7 +820,17 @@ export function activate(context: vscode.ExtensionContext) {
   status.command = 'meridian.output'
   context.subscriptions.push(status, { dispose: () => clearInterval(ticker) })
   const lenses = new Lenses()
+  const current = (model: string) => readJson<{ mlflow?: { run_id?: string } }>(join(project(), 'models', `${model}.result.json`))?.mlflow?.run_id
+  const runsView = new RunsView(
+    () =>
+      new Tree('models')
+        .list()
+        .flatMap((i) => runsOf(i.name).map((r): RunRow => ({ ...(r as unknown as RunRow), model: i.name, current: r.mlflow.run_id === current(i.name) })))
+        .sort((a, b) => b.at.localeCompare(a.at)),
+    (row) => showRun(row.model, row as unknown as PastRun)
+  )
   const refresh = () => {
+    runsView.update()
     ROOTS.forEach((r) => trees[r].refresh())
     lenses.refresh()
     for (const file of openPanels().filter((f) => !f.includes('#'))) results(basename(dirname(file)) as Root, basename(file, '.result.json'), false)
@@ -757,6 +856,8 @@ export function activate(context: vscode.ExtensionContext) {
     ...ROOTS.map((r) => vscode.window.registerTreeDataProvider(`meridian.${r}`, trees[r])),
     vscode.commands.registerCommand('meridian.refresh', refresh),
     vscode.commands.registerCommand('meridian.run', guarded((i: Item) => run(runner, out, problems, i.root, i.name, refresh))),
+    vscode.window.registerWebviewViewProvider('meridian.runs', runsView),
+    vscode.tasks.registerTaskProvider('meridian', makeTasks((root, name, term) => run(runner, out, problems, root, name, refresh, term))),
     vscode.commands.registerCommand('meridian.stop', (i: Item) => children.get(`${i.root}/${i.name}`)?.kill()),
     vscode.commands.registerCommand('meridian.rename', guarded(rename)),
     vscode.commands.registerCommand('meridian.delete', guarded(remove)),
@@ -775,4 +876,4 @@ export function activate(context: vscode.ExtensionContext) {
 
 export function deactivate() {}
 export const _setStorage = (dir: string) => (storage = dir)
-export { referenceIn as _referenceIn, fingerprintOf as _fingerprintOf, ensureUv as _ensureUv, columnsOf as _columnsOf, priorsOf as _priorsOf, modelChildren as _modelChildren, folderChildren as _folderChildren } // for scripts/check-columns.js
+export { wordRange as _wordRange, referenceIn as _referenceIn, fingerprintOf as _fingerprintOf, ensureUv as _ensureUv, columnsOf as _columnsOf, priorsOf as _priorsOf, modelChildren as _modelChildren, folderChildren as _folderChildren } // for scripts/check-columns.js

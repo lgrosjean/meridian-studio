@@ -79,6 +79,26 @@ priors:
   sigma: { dist: HalfNormal, scale: 3 }
 ```
 
+## Runs, checks and tasks
+
+- **Meridian Runs**, a tab of the bottom panel, lists every fit of every model with its metrics. Click one for its
+  results; tick two to compare their metrics, ROI by channel and the configuration that differs.
+- **Meridian's data checks** (multicollinearity, perfect correlation, a control that never varies…) land in Problems,
+  on the lines naming the variables: the model's priors, and the dataset's mappings.
+- **Tasks**: every fit and optimization is a VS Code task of type `meridian` (Terminal › Run Task). It runs in the
+  integrated terminal, stops and reruns like any task, and chains with `dependsOn`:
+
+```jsonc
+// .vscode/tasks.json: refit the model, then its scenario
+{
+  "version": "2.0.0",
+  "tasks": [
+    { "label": "fit v1", "type": "meridian", "file": "models/national-media-v1.yaml" },
+    { "label": "plus-10", "type": "meridian", "file": "scenarios/plus-10.yaml", "dependsOn": "fit v1" }
+  ]
+}
+```
+
 ## Settings
 
 | Setting                     | Default | Meaning                                                                 |

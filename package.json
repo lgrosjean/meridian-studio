@@ -32,6 +32,13 @@
           "title": "Meridian",
           "icon": "media/meridian.svg"
         }
+      ],
+      "panel": [
+        {
+          "id": "meridianRuns",
+          "title": "Meridian Runs",
+          "icon": "media/meridian.svg"
+        }
       ]
     },
     "views": {
@@ -47,6 +54,13 @@
         {
           "id": "meridian.scenarios",
           "name": "Scenarios"
+        }
+      ],
+      "meridianRuns": [
+        {
+          "type": "webview",
+          "id": "meridian.runs",
+          "name": "Runs"
         }
       ]
     },
@@ -221,6 +235,20 @@
       {
         "fileMatch": "**/scenarios/*.yaml",
         "url": "./schemas/scenario.schema.json"
+      }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "meridian",
+        "required": [
+          "file"
+        ],
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "The model to fit or the scenario to optimize: models/<name>.yaml or scenarios/<name>.yaml, relative to the workspace folder."
+          }
+        }
       }
     ]
   },
