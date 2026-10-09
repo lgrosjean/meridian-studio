@@ -4,7 +4,7 @@
   "description": "Datasets, Meridian models and budget scenarios as YAML files, fitted and optimized from the sidebar.",
   "version": "0.1.0",
   "publisher": "lgrosjean",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "icon": "media/meridian.png",
   "repository": {
     "type": "git",

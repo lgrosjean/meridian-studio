@@ -69,6 +69,6 @@ Set `meridian.mlflowTrackingUri` to log fits to a remote MLflow server instead o
 
 ## License
 
-MIT, see `LICENSE`. [Google Meridian](https://github.com/google/meridian) is Apache 2.0 and is installed by
+Apache License 2.0, see `LICENSE` and `NOTICE`. [Google Meridian](https://github.com/google/meridian) is Apache 2.0 and is installed by
 uv at run time, not bundled. The icons in `media/` reproduce the Meridian logo, a Google trademark: they are
 not covered by this license.

@@ -7,3 +7,4 @@
 - Fit and Optimize from the sidebar or the link above the file; results panel, Meridian's report in the editor.
 - A model's priors and its run history (`<model>.runs.jsonl`) in the tree; fits tracked in a local or remote MLflow.
 - uv installed on first use when missing.
+- Apache License 2.0, as Meridian.
