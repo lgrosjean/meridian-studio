@@ -1,0 +1,14 @@
+# Meridian's simulated national data (meridian/data/simulated_data/csv/national_media.csv).
+name: synthetic
+csv: data/national_media.csv
+kpi_type: non_revenue
+currency_code: USD
+coord_to_columns:
+  time: time
+  kpi: conversions
+  revenue_per_kpi: revenue_per_conversion
+  controls: [competitor_activity_score_control, sentiment_score_control]
+  media: [Channel0_impression, Channel1_impression, Channel2_impression, Channel3_impression]
+  media_spend: [Channel0_spend, Channel1_spend, Channel2_spend, Channel3_spend]
+media_to_channel: { Channel0_impression: ch0, Channel1_impression: ch1, Channel2_impression: ch2, Channel3_impression: ch3 }
+media_spend_to_channel: { Channel0_spend: ch0, Channel1_spend: ch1, Channel2_spend: ch2, Channel3_spend: ch3 }

@@ -1,0 +1,16 @@
+name: synthetic-v1
+dataset: synthetic
+model_spec:
+  media_effects_dist: log_normal
+  max_lag: 8
+  adstock_decay_spec: geometric
+  enable_aks: true
+priors:
+  roi:
+    ch0: { mean: 1.5, sd: 0.8 }
+sampling:
+  n_chains: [2, 2]
+  n_adapt: 1000
+  n_burnin: 0
+  n_keep: 1000
+  seed: 1

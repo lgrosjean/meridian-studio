@@ -1,0 +1,111 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Meridian Studio model",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["dataset"],
+  "properties": {
+    "name": { "type": "string" },
+    "dataset": { "type": "string", "description": "The dataset to fit: datasets/<this>.yaml." },
+    "window": { "$ref": "#/definitions/window", "description": "Fit on these dates only; default the whole CSV." },
+    "summary_window": { "$ref": "#/definitions/window", "description": "The period Meridian's HTML report summarises; default the fit window." },
+    "model_spec": {
+      "type": "object",
+      "description": "meridian.model.spec.ModelSpec's arguments.",
+      "additionalProperties": false,
+      "properties": {
+        "media_effects_dist": { "enum": ["log_normal", "normal"], "default": "log_normal", "description": "Distribution of media effects across geos. Unused in a national model." },
+        "hill_before_adstock": { "type": "boolean", "default": false, "description": "Hill saturation before adstock instead of after. Not for RF channels." },
+        "max_lag": { "type": "integer", "minimum": 0, "default": 8, "description": "Periods of carry-over in the adstock." },
+        "unique_sigma_for_each_geo": { "type": "boolean", "default": false, "description": "A residual variance per geo." },
+        "media_prior_type": { "$ref": "#/definitions/paidPrior", "description": "Which prior the media coefficients take: roi (roi_m), mroi, contribution or coefficient. priors.roi below needs roi. Default roi." },
+        "rf_prior_type": { "$ref": "#/definitions/paidPrior", "description": "Same as media_prior_type, for reach & frequency channels. Default roi." },
+        "organic_media_prior_type": { "$ref": "#/definitions/unpaidPrior", "default": "contribution" },
+        "organic_rf_prior_type": { "$ref": "#/definitions/unpaidPrior", "default": "contribution" },
+        "non_media_treatments_prior_type": { "$ref": "#/definitions/unpaidPrior", "default": "contribution" },
+        "non_media_baseline_values": {
+          "type": "object",
+          "additionalProperties": { "anyOf": [{ "type": "number" }, { "enum": ["min", "max"] }] },
+          "description": "Non-media treatment → its baseline: a value, min or max. Default min."
+        },
+        "knots": {
+          "anyOf": [{ "type": "integer", "minimum": 1 }, { "type": "array", "items": { "type": "integer", "minimum": 0 } }],
+          "description": "Time-effect knots: a count spread evenly, or period indices. National default 1. Not with enable_aks."
+        },
+        "enable_aks": { "type": "boolean", "default": false, "description": "Automatic knot selection. Not with knots." },
+        "baseline_geo": { "type": ["integer", "string"], "description": "Reference geo; default the most populated." },
+        "population_scaled_controls": { "type": "array", "items": { "type": "string" }, "description": "Controls scaled by population." },
+        "population_scaled_non_media_channels": { "type": "array", "items": { "type": "string" }, "description": "Non-media treatments scaled by population." },
+        "adstock_decay_spec": {
+          "anyOf": [{ "$ref": "#/definitions/decay" }, { "type": "object", "additionalProperties": { "$ref": "#/definitions/decay" } }],
+          "default": "geometric",
+          "description": "geometric or binomial, for all channels or per channel (others geometric)."
+        },
+        "saturation_spec": {
+          "anyOf": [{ "$ref": "#/definitions/saturation" }, { "type": "object", "additionalProperties": { "$ref": "#/definitions/saturation" } }],
+          "default": "hill",
+          "description": "hill or none, for all channels or per channel (others hill)."
+        },
+        "holdout": { "type": "null", "description": "Not supported yet: leave it out." }
+      }
+    },
+    "priors": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "roi": {
+          "type": "object",
+          "description": "Channel → LogNormal ROI prior given as mean and sd in ROI units. Omitted channels keep Meridian's LogNormal(0.2, 0.9).",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["mean", "sd"],
+            "properties": { "mean": { "type": "number", "exclusiveMinimum": 0 }, "sd": { "type": "number", "exclusiveMinimum": 0 } }
+          }
+        },
+        "adstock": {
+          "type": "object",
+          "description": "Channel → geometric decay prior, TruncatedNormal on [low, high]. Omitted channels stay nearly flat on [0, 1].",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["loc"],
+            "properties": {
+              "loc": { "type": "number", "minimum": 0, "maximum": 1 },
+              "scale": { "type": "number", "exclusiveMinimum": 0, "default": 0.2 },
+              "low": { "type": "number", "minimum": 0, "maximum": 1, "default": 0 },
+              "high": { "type": "number", "minimum": 0, "maximum": 1, "default": 1 }
+            }
+          }
+        }
+      }
+    },
+    "sampling": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "n_prior": { "type": "integer", "minimum": 1, "default": 500, "description": "Prior draws." },
+        "n_chains": {
+          "anyOf": [{ "type": "integer", "minimum": 1 }, { "type": "array", "items": { "type": "integer", "minimum": 1 } }],
+          "default": [2, 2],
+          "description": "MCMC chains; a list runs them in batches to save memory."
+        },
+        "n_adapt": { "type": "integer", "minimum": 0, "default": 1000, "description": "Adaptation steps per chain." },
+        "n_burnin": { "type": "integer", "minimum": 0, "default": 0, "description": "Burn-in steps after adaptation." },
+        "n_keep": { "type": "integer", "minimum": 1, "default": 1000, "description": "Draws kept per chain." },
+        "seed": { "type": "integer", "description": "For reproducible fits." }
+      }
+    }
+  },
+  "definitions": {
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "start": { "type": "string", "format": "date" }, "end": { "type": "string", "format": "date" } }
+    },
+    "paidPrior": { "enum": ["roi", "mroi", "contribution", "coefficient"] },
+    "unpaidPrior": { "enum": ["contribution", "coefficient"] },
+    "decay": { "enum": ["geometric", "binomial"] },
+    "saturation": { "enum": ["hill", "none"] }
+  }
+}

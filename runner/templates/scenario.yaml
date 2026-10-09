@@ -1,0 +1,9 @@
+# {{name}}: Meridian's budget optimizer on the fit of {{model}}.
+name: {{name}}
+model: {{model}}
+# window: { start: 2024-01-01, end: 2024-12-30 }   # the period whose spend is reallocated; default: the whole fit
+budget: historical           # historical, an amount, or a change like +10%
+bounds: { lower: 0.3, upper: 0.3 }   # how far a channel may move from its historical spend, as a fraction
+# channels:                  # per-channel bounds, overriding `bounds`
+#   tv: { lower: 0.1, upper: 0.5 }
+# target: { roi: 2.0 }       # or { mroi: 1.5 }: the budget floats until the target is met; `budget` is then ignored

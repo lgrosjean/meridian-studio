@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Meridian Studio scenario",
+  "description": "Meridian's BudgetOptimizer on the fit of a model.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["model"],
+  "properties": {
+    "name": { "type": "string" },
+    "model": { "type": "string", "description": "The fitted model: models/<this>.yaml, fitted first." },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The period whose spend is reallocated; default the whole fit.",
+      "properties": { "start": { "type": "string", "format": "date" }, "end": { "type": "string", "format": "date" } }
+    },
+    "budget": {
+      "anyOf": [{ "const": "historical" }, { "type": "number", "exclusiveMinimum": 0 }, { "type": "string", "pattern": "^\\s*[+-]?\\d+(\\.\\d+)?\\s*%\\s*$" }],
+      "default": "historical",
+      "description": "historical, an amount, or a change from historical like +10%. Ignored with target."
+    },
+    "bounds": { "$ref": "#/definitions/bounds", "description": "How far every channel may move from its historical spend, as fractions. Meridian's default 0.3 both ways." },
+    "channels": { "type": "object", "description": "Channel → its own bounds, overriding bounds.", "additionalProperties": { "$ref": "#/definitions/bounds" } },
+    "target": {
+      "type": "object",
+      "description": "Flexible budget: spend until the target is met. budget is then ignored.",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "maxProperties": 1,
+      "properties": {
+        "roi": { "type": "number", "exclusiveMinimum": 0, "description": "Total ROI to reach." },
+        "mroi": { "type": "number", "exclusiveMinimum": 0, "description": "Marginal ROI below which no more is spent." }
+      }
+    }
+  },
+  "definitions": {
+    "bounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "lower": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.3, "description": "At most this fraction below historical spend." },
+        "upper": { "type": "number", "minimum": 0, "default": 0.3, "description": "At most this fraction above historical spend." }
+      }
+    }
+  }
+}

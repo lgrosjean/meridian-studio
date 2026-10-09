@@ -1,0 +1,244 @@
+{
+  "name": "meridian-studio",
+  "displayName": "Meridian Studio",
+  "description": "Datasets, Meridian models and budget scenarios as YAML files, fitted and optimized from the sidebar.",
+  "version": "0.1.0",
+  "publisher": "lgrosjean",
+  "license": "MIT",
+  "icon": "media/meridian.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lgrosjean/meridian-studio"
+  },
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "categories": [
+    "Data Science",
+    "Machine Learning"
+  ],
+  "activationEvents": [
+    "workspaceContains:datasets/*.yaml",
+    "workspaceContains:models/*.yaml",
+    "workspaceContains:scenarios/*.yaml"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "meridian",
+          "title": "Meridian",
+          "icon": "media/meridian.svg"
+        }
+      ]
+    },
+    "views": {
+      "meridian": [
+        {
+          "id": "meridian.datasets",
+          "name": "Datasets"
+        },
+        {
+          "id": "meridian.models",
+          "name": "Models"
+        },
+        {
+          "id": "meridian.scenarios",
+          "name": "Scenarios"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "meridian.datasets",
+        "contents": "A dataset points Meridian at a CSV: its columns, its channels.\n[New dataset](command:meridian.newDataset)"
+      }
+    ],
+    "commands": [
+      {
+        "command": "meridian.run",
+        "title": "Run",
+        "icon": "$(play)"
+      },
+      {
+        "command": "meridian.stop",
+        "title": "Stop",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "meridian.report",
+        "title": "Open Meridian report"
+      },
+      {
+        "command": "meridian.refresh",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "meridian.newDataset",
+        "title": "New dataset",
+        "icon": "$(add)"
+      },
+      {
+        "command": "meridian.newModel",
+        "title": "New model",
+        "icon": "$(add)"
+      },
+      {
+        "command": "meridian.newScenario",
+        "title": "New scenario",
+        "icon": "$(add)"
+      },
+      {
+        "command": "meridian.rename",
+        "title": "Rename\u2026"
+      },
+      {
+        "command": "meridian.delete",
+        "title": "Delete"
+      },
+      {
+        "command": "meridian.results",
+        "title": "Show results",
+        "icon": "$(preview)"
+      },
+      {
+        "command": "meridian.output",
+        "title": "Show runner output"
+      },
+      {
+        "command": "meridian.showRun",
+        "title": "Show run results"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "meridian.newDataset",
+          "when": "view == meridian.datasets",
+          "group": "navigation"
+        },
+        {
+          "command": "meridian.newModel",
+          "when": "view == meridian.models",
+          "group": "navigation"
+        },
+        {
+          "command": "meridian.newScenario",
+          "when": "view == meridian.scenarios",
+          "group": "navigation"
+        },
+        {
+          "command": "meridian.refresh",
+          "when": "view =~ /^meridian\\./",
+          "group": "navigation@9"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "meridian.run",
+          "when": "view =~ /^meridian\\./ && viewItem =~ /^(file|report)$/",
+          "group": "inline@1"
+        },
+        {
+          "command": "meridian.stop",
+          "when": "view =~ /^meridian\\./ && viewItem == running",
+          "group": "inline@1"
+        },
+        {
+          "command": "meridian.results",
+          "when": "view =~ /^meridian\\./ && viewItem == report",
+          "group": "inline@2"
+        },
+        {
+          "command": "meridian.rename",
+          "when": "view =~ /^meridian\\./",
+          "group": "7_modification@1"
+        },
+        {
+          "command": "meridian.delete",
+          "when": "view =~ /^meridian\\./",
+          "group": "7_modification@2"
+        },
+        {
+          "command": "meridian.report",
+          "when": "view =~ /^meridian\\./ && viewItem == report",
+          "group": "7_modification@0"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "meridian.run",
+          "when": "false"
+        },
+        {
+          "command": "meridian.stop",
+          "when": "false"
+        },
+        {
+          "command": "meridian.report",
+          "when": "false"
+        },
+        {
+          "command": "meridian.rename",
+          "when": "false"
+        },
+        {
+          "command": "meridian.delete",
+          "when": "false"
+        },
+        {
+          "command": "meridian.results",
+          "when": "false"
+        },
+        {
+          "command": "meridian.showRun",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Meridian Studio",
+      "properties": {
+        "meridian.mlflowTrackingUri": {
+          "type": "string",
+          "default": "",
+          "description": "Where fits are logged. Empty: a SQLite store in the project (mlflow.db, mlruns/). A URI such as http://mlflow.example.com:5000 logs to that server instead."
+        }
+      }
+    },
+    "yamlValidation": [
+      {
+        "fileMatch": "**/datasets/*.yaml",
+        "url": "./schemas/dataset.schema.json"
+      },
+      {
+        "fileMatch": "**/models/*.yaml",
+        "url": "./schemas/model.schema.json"
+      },
+      {
+        "fileMatch": "**/scenarios/*.yaml",
+        "url": "./schemas/scenario.schema.json"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "watch": "tsc -w -p .",
+    "package": "vsce package",
+    "test": "tsc -p . && node scripts/check-columns.js && uv run --project runner runner/test_runner.py"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/vscode": "^1.100.0",
+    "@vscode/vsce": "^3",
+    "typescript": "^5"
+  },
+  "extensionDependencies": [
+    "redhat.vscode-yaml"
+  ],
+  "dependencies": {
+    "yaml": "2.8.1"
+  }
+}

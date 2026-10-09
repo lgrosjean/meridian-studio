@@ -1,0 +1,14 @@
+[project]
+name = "meridian-studio-runner"
+version = "0.1.0"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+  "google-meridian[schema]>=2.1",
+  "pyyaml",
+  "pandas",
+  "pyarrow",
+  "mlflow",
+]
+
+[tool.uv]
+package = false

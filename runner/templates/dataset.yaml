@@ -1,0 +1,21 @@
+# {{name}}: Meridian's CsvDataLoader arguments, csv_path written `csv`. Fill the columns from the CSV's header:
+#   {{columns}}
+# Dates in `time` must read yyyy-mm-dd. A national model needs no geo nor population.
+# Reference: https://developers.google.com/meridian/reference/api/meridian/data/load/CsvDataLoader
+name: {{name}}
+csv: {{csv}}
+kpi_type: revenue            # or non_revenue, with revenue_per_kpi to read results in money
+# currency_code: EUR
+coord_to_columns:
+  time: {{time}}
+  kpi: <column>
+  # revenue_per_kpi: <column>
+  controls: []               # what moves the KPI that media does not: seasonality, price, distribution
+  media: [<impressions column>, ...]
+  media_spend: [<spend column>, ...]
+  # reach: [], frequency: [], rf_spend: []      reach & frequency channels, instead of or besides media
+  # non_media_treatments: [], organic_media: []
+media_to_channel:            # each media column → its channel's name
+  <impressions column>: <channel>
+media_spend_to_channel:      # each media_spend column → the same channel names
+  <spend column>: <channel>

@@ -1,0 +1,5 @@
+# Same period, 10% more budget, each channel within ±30% of what it spent.
+name: plus-10
+model: synthetic-v1
+budget: +10%
+bounds: { lower: 0.3, upper: 0.3 }

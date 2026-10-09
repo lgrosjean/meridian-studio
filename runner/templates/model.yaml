@@ -1,0 +1,19 @@
+# {{name}}: Meridian on {{dataset}}. model_spec takes meridian.model.spec.ModelSpec's arguments.
+name: {{name}}
+dataset: {{dataset}}
+model_spec:
+  media_effects_dist: log_normal
+  max_lag: 8
+  adstock_decay_spec: geometric
+  enable_aks: true
+# priors:                     # LogNormal on each channel's ROI (mean, sd in ROI units); omitted channels keep Meridian's
+#   roi:
+{{roi}}
+#   adstock:                  # geometric decay per channel, TruncatedNormal on [0, 1]
+#     <channel>: { loc: 0.5, scale: 0.2, low: 0.0, high: 1.0 }
+sampling:
+  n_chains: [2, 2]
+  n_adapt: 1000
+  n_burnin: 0
+  n_keep: 1000
+  seed: 1

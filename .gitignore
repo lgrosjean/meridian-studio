@@ -1,0 +1,19 @@
+node_modules/
+out/
+*.vsix
+runner/.venv/
+__pycache__/
+examples/mlruns/
+examples/mlflow.db
+examples/**/*.result.json
+examples/scenarios/*.html
+.DS_Store
+mlruns/
+mlflow.db
+examples/**/*.runs.jsonl
+# the extension's own playground when it is opened on this repo
+/datasets/
+/models/
+/scenarios/
+examples/**/*.run.json
+examples/models/test.*

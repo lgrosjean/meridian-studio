@@ -1,0 +1,16 @@
+.vscode/**
+src/**
+examples/**
+runner/.venv/**
+runner/__pycache__/**
+runner/test_runner.py
+tsconfig.json
+bun.lock
+*.vsix
+**/.DS_Store
+datasets/**
+models/**
+scenarios/**
+scripts/**
+mlruns/**
+mlflow.db

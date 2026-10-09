@@ -1,0 +1,55 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Meridian Studio dataset",
+  "description": "Meridian's CsvDataLoader arguments; `csv` stands for csv_path.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["csv", "kpi_type", "coord_to_columns"],
+  "properties": {
+    "name": { "type": "string" },
+    "csv": { "type": "string", "description": "The CSV, relative to the project or absolute. Dates in the time column read yyyy-mm-dd." },
+    "kpi_type": {
+      "enum": ["revenue", "non_revenue"],
+      "description": "revenue: the KPI is money. non_revenue: units, with revenue_per_kpi to read results in money (ROI calibration); without it, custom ROI calibration on the KPI."
+    },
+    "currency_code": { "type": "string", "pattern": "^[A-Z]{3}$", "description": "ISO 4217, for the reports." },
+    "coord_to_columns": {
+      "type": "object",
+      "description": "Meridian's role → the CSV column(s) holding it.",
+      "additionalProperties": false,
+      "required": ["time", "kpi"],
+      "properties": {
+        "time": { "type": "string", "default": "time", "description": "Date column, yyyy-mm-dd, one row per period (and geo)." },
+        "geo": { "type": "string", "description": "Geo column. Leave out for a national model." },
+        "kpi": { "type": "string", "description": "What media moves: sales, conversions, revenue." },
+        "revenue_per_kpi": { "type": "string", "description": "Money per KPI unit, with kpi_type: non_revenue." },
+        "population": { "type": "string", "description": "Population per geo. Reset to 1 in a national model." },
+        "controls": { "$ref": "#/definitions/columns", "description": "What moves the KPI that media does not: seasonality, price, distribution." },
+        "media": { "$ref": "#/definitions/columns", "description": "Execution per channel: impressions, GRP, clicks. Pair with media_spend and the *_to_channel maps." },
+        "media_spend": { "$ref": "#/definitions/columns", "description": "Spend per media channel, same channels as media." },
+        "reach": { "$ref": "#/definitions/columns", "description": "Reach & frequency channels: reach columns." },
+        "frequency": { "$ref": "#/definitions/columns", "description": "Reach & frequency channels: frequency columns." },
+        "rf_spend": { "$ref": "#/definitions/columns", "description": "Reach & frequency channels: spend columns." },
+        "non_media_treatments": { "$ref": "#/definitions/columns", "description": "Levers that are not media: price, promotions, discount." },
+        "organic_media": { "$ref": "#/definitions/columns", "description": "Unpaid media: blog posts, emails, organic social." },
+        "organic_reach": { "$ref": "#/definitions/columns" },
+        "organic_frequency": { "$ref": "#/definitions/columns" }
+      }
+    },
+    "media_to_channel": { "$ref": "#/definitions/toChannel", "description": "Each media column → its channel's name. Required with media." },
+    "media_spend_to_channel": { "$ref": "#/definitions/toChannel", "description": "Each media_spend column → the same channel names as media_to_channel." },
+    "reach_to_channel": { "$ref": "#/definitions/toChannel" },
+    "frequency_to_channel": { "$ref": "#/definitions/toChannel" },
+    "rf_spend_to_channel": { "$ref": "#/definitions/toChannel" },
+    "organic_reach_to_channel": { "$ref": "#/definitions/toChannel" },
+    "organic_frequency_to_channel": { "$ref": "#/definitions/toChannel" }
+  },
+  "dependencies": {
+    "media_to_channel": ["media_spend_to_channel"],
+    "media_spend_to_channel": ["media_to_channel"]
+  },
+  "definitions": {
+    "columns": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "toChannel": { "type": "object", "additionalProperties": { "type": "string" } }
+  }
+}
