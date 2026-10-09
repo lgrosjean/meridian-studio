@@ -1,10 +1,10 @@
 # Changelog
 
-## 0.2.0
+## Unreleased
 
 - **Priors cover all of Meridian's PriorDistribution** (36 fields: ROI, mROI, contribution, adstock, Hill, controls,
   noise…), each one TensorFlow Probability distribution, once for all channels or per channel with a default.
-  The 0.1 keys `roi` and `adstock` are now `roi_m` and `alpha_m` with a `dist`; the fit says how to convert.
+  The keys `roi` and `adstock` are now `roi_m` and `alpha_m` with a `dist`; the fit says how to convert.
 - Completion and hover docs for every prior, generated from Meridian.
 - The tree shows each channel's priors whatever their distribution, and flags a prior the prior type leaves unused.
 - Open a model's dataset or a scenario's model from the link above the line naming it, or Cmd+click the name.
