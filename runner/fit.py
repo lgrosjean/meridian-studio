@@ -3,7 +3,6 @@ import dataclasses
 import datetime as dt
 import inspect
 import json
-import math
 import os
 import tempfile
 import time
@@ -27,9 +26,10 @@ def read_model(project: Path, path: str) -> dict:
     return m
 
 
-def model_spec(m: dict, channels: list[str]):
-    from meridian import backend, constants
-    from meridian.model import prior_distribution, spec
+def model_spec(m: dict, data):
+    from meridian.model import spec
+
+    from priors import prior_distribution
 
     kw = dict(m.get("model_spec") or {})
     accepted = set(inspect.signature(spec.ModelSpec).parameters) - {"prior"}
@@ -38,39 +38,9 @@ def model_spec(m: dict, channels: list[str]):
         raise Fail(f"model_spec: unknown {', '.join(sorted(unknown))}; accepted: {', '.join(sorted(accepted))}")
     if kw.get("holdout") is not None:
         raise Fail("model_spec.holdout is not supported yet; leave it null")  # ponytail: HoldoutSpec translation when asked
-    priors = m.get("priors") or {}
-    unknown = set(priors) - {"roi", "adstock"}
-    if unknown:
-        raise Fail(f"priors: unknown {', '.join(sorted(unknown))}; accepted: roi, adstock")
-    roi, adstock = priors.get("roi") or {}, priors.get("adstock") or {}
-    for key, given in (("roi", roi), ("adstock", adstock)):
-        unknown = set(given) - set(channels)
-        if unknown:
-            raise Fail(f"priors.{key}: {', '.join(sorted(unknown))} not in the dataset's channels {channels}")
-    dists = {}
-    if roi:
-        # mean/sd are in ROI units; the LogNormal's mu/sigma follow. Omitted channels keep Meridian's LogNormal(0.2, 0.9).
-        mu, sigma = [], []
-        for ch in channels:
-            if ch in roi:
-                mean, sd = roi[ch]["mean"], roi[ch]["sd"]
-                s2 = math.log(1 + (sd / mean) ** 2)
-                mu.append(math.log(mean) - s2 / 2)
-                sigma.append(math.sqrt(s2))
-            else:
-                mu.append(0.2)
-                sigma.append(0.9)
-        dists["roi_m"] = backend.tfd.LogNormal(np.array(mu), np.array(sigma), name=constants.ROI_M)
-    if adstock:
-        # Geometric decay per channel, TruncatedNormal(loc, scale, low, high) on [0, 1].
-        # Omitted channels get a flat TruncatedNormal(0.5, 10, 0, 1), close to Meridian's Uniform(0, 1).
-        flat = {"loc": 0.5, "scale": 10.0, "low": 0.0, "high": 1.0}
-        a = [{**flat, **adstock.get(ch, {})} for ch in channels]
-        dists["alpha_m"] = backend.tfd.TruncatedNormal(
-            *(np.array([x[k] for x in a], dtype=float) for k in ("loc", "scale", "low", "high")), name=constants.ALPHA_M
-        )
-    if dists:
-        kw["prior"] = prior_distribution.PriorDistribution(**dists)
+    prior = prior_distribution(m.get("priors"), data)
+    if prior is not None:
+        kw["prior"] = prior
     return spec.ModelSpec(**kw)
 
 
@@ -106,7 +76,6 @@ def fit(project: Path, path: str, emit) -> dict:
     d, df, fingerprint = frame(project, ds_path)
     df = window(df, d["coord_to_columns"].get("time", "time"), m.get("window"))
     channels = channels_of(d)
-    spec = model_spec(m, channels)
 
     from meridian.analysis import analyzer, summarizer
     from meridian.model import model
@@ -115,7 +84,7 @@ def fit(project: Path, path: str, emit) -> dict:
     t0 = time.time()
     emit(event="phase", name="data", state="run")
     data = input_data(df, d)
-    mmm = model.Meridian(data, spec)
+    mmm = model.Meridian(data, model_spec(m, data))
     emit(event="phase", name="data", state="done")
 
     eda = mmm.eda_outcomes

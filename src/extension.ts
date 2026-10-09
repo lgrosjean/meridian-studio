@@ -355,38 +355,60 @@ class Prior extends vscode.TreeItem {
     this.iconPath = new vscode.ThemeIcon(absent ? 'error' : 'symbol-parameter', absent ? new vscode.ThemeColor('list.errorForeground') : undefined)
   }
 }
+// priors: PriorDistribution fields, each { dist, …arguments } once for all, or per channel with a default.
+const PRIOR_ARGS = new Set(['loc', 'scale', 'mean', 'sd', 'low', 'high', 'concentration1', 'concentration0', 'concentration', 'rate', 'df'])
+const PRIOR_LABEL: Record<string, string> = { roi: 'ROI', mroi: 'mROI', alpha: 'adstock', ec: 'half-saturation', slope: 'slope', contribution: 'contribution', beta: 'β', eta: 'η' }
+type PriorSpec = Record<string, any>
+const perItem = (spec: PriorSpec) => Object.keys(spec).some((k) => k !== 'dist' && k !== 'shift' && !PRIOR_ARGS.has(k))
+/** The arguments a prior gives this item: its own, the default, or the ones for all. */
+const argsFor = (spec: PriorSpec, item: string): PriorSpec | undefined =>
+  perItem(spec) ? (spec[item] ?? spec.default) : Object.fromEntries(Object.entries(spec).filter(([k]) => PRIOR_ARGS.has(k)))
+const describePrior = (spec: PriorSpec, args: PriorSpec) =>
+  spec.dist === 'LogNormal' && yes(args.mean) && yes(args.sd)
+    ? `${fixed(args.mean)} ± ${fixed(args.sd)}`
+    : `${spec.dist}(${Object.values(args).map((v) => fixed(v)).join(', ')})${yes(spec.shift) ? ` + ${spec.shift}` : ''}`
+
 function priorsOf(name: string): Prior[] {
   const m = readYaml(yamlOf('models', name))
   const ds = typeof m.dataset === 'string' && fs.existsSync(yamlOf('datasets', m.dataset)) ? readYaml(yamlOf('datasets', m.dataset)) : {}
-  const channels = [...new Set([...Object.values(ds.media_to_channel ?? {}), ...Object.values(ds.reach_to_channel ?? {})].map(String))]
-  const roi: Record<string, { mean?: unknown; sd?: unknown }> = m.priors?.roi ?? {}
-  const adstock: Record<string, Record<string, unknown>> = m.priors?.adstock ?? {}
+  const media = [...new Set(Object.values(ds.media_to_channel ?? {}).map(String))]
+  const rf = [...new Set(Object.values(ds.reach_to_channel ?? {}).map(String))]
+  const priors: Record<string, PriorSpec> = m.priors && typeof m.priors === 'object' ? m.priors : {}
   const type = m.model_spec?.media_prior_type ?? 'roi'
   const result = readJson<{ channels?: { name: string; roi: number; roi_lo: number; roi_hi: number }[] }>(join(project(), 'models', `${name}.result.json`))
   const fitted = new Map((result?.channels ?? []).map((c) => [c.name, c]))
-  const items = channels.map((ch) => {
-    const r = roi[ch]
-    const a = adstock[ch]
-    const set = r && yes(r.mean) && yes(r.sd)
-    // Meridian's default ROI prior is LogNormal(0.2, 0.9): mean e^(0.2 + 0.9²/2), sd mean·√(e^(0.9²) − 1).
-    const roiText = type !== 'roi' ? `${type} prior (Meridian's)` : set ? `ROI ${fixed(r.mean)} ± ${fixed(r.sd)}` : 'ROI 1.83 ± 2.04 (default)'
-    const adText = a && yes(a.loc) ? `adstock ${fixed(a.loc)} [${fixed(yes(a.low) ? a.low : 0)}–${fixed(yes(a.high) ? a.high : 1)}]` : 'adstock uniform'
+  const channelFields = (suffix: string) => Object.keys(priors).filter((f) => f.endsWith(suffix) && !f.endsWith(`_o${suffix.slice(1)}`))
+
+  const row = (ch: string, suffix: '_m' | '_rf') => {
+    const parts: string[] = []
+    const tip = [`**${ch}**`]
+    for (const field of channelFields(suffix)) {
+      const spec = priors[field]
+      const args = spec && typeof spec === 'object' ? argsFor(spec, ch) : undefined
+      if (!args) continue
+      const what = PRIOR_LABEL[field.replace(/_(m|rf)$/, '')] ?? field
+      const unused = ['roi', 'mroi', 'contribution', 'beta'].includes(field.replace(/_(m|rf)$/, '')) && !field.startsWith(type === 'coefficient' ? 'beta' : type)
+      parts.push(`${what} ${describePrior(spec, args)}${unused ? ' (unused)' : ''}`)
+      tip.push(`\`${field}\`: ${spec.dist} ${JSON.stringify(args)}${spec[ch] ? '' : perItem(spec) ? ' (its default)' : ''}${unused ? ` — not used: media_prior_type is \`${type}\`` : ''}`)
+    }
+    // Meridian's default ROI prior is LogNormal(0.2, 0.9): mean e^(0.2 + 0.9²/2) = 1.83, sd 1.83·√(e^(0.9²) − 1) = 2.04.
+    if (!channelFields(suffix).some((f) => f.startsWith(type === 'coefficient' ? 'beta' : type)))
+      parts.unshift(type === 'roi' ? 'ROI 1.83 ± 2.04 (default)' : `${type} (default)`)
     const f = fitted.get(ch)
-    const tip = [
-      `**${ch}**`,
-      type !== 'roi'
-        ? `media_prior_type is \`${type}\`: priors.roi is not used.`
-        : set
-          ? `ROI prior: LogNormal with mean ${r.mean} and sd ${r.sd} (ROI units).`
-          : `ROI prior: Meridian's LogNormal(0.2, 0.9), mean 1.83, sd 2.04.`,
-      a && yes(a.loc)
-        ? `Adstock decay prior: TruncatedNormal(loc ${a.loc}, scale ${yes(a.scale) ? a.scale : 0.2}) on [${yes(a.low) ? a.low : 0}, ${yes(a.high) ? a.high : 1}].`
-        : 'Adstock decay prior: uniform on [0, 1].',
-      f ? `Fitted ROI: ${fixed(f.roi)}, 90% interval ${fixed(f.roi_lo)}–${fixed(f.roi_hi)}.` : ''
-    ]
-    return new Prior(ch, [roiText, adText, f ? `fit ${fixed(f.roi)}` : ''].filter(Boolean).join(' · '), tip.filter(Boolean).join('\n\n'))
-  })
-  const unknown = [...new Set([...Object.keys(roi), ...Object.keys(adstock)])].filter((c) => !channels.includes(c))
+    if (f) {
+      parts.push(`fit ${fixed(f.roi)}`)
+      tip.push(`Fitted ROI: ${fixed(f.roi)}, 90% interval ${fixed(f.roi_lo)}–${fixed(f.roi_hi)}.`)
+    }
+    return new Prior(ch, parts.join(' · '), tip.join('\n\n'))
+  }
+
+  const items = [...media.map((ch) => row(ch, '_m')), ...rf.map((ch) => row(ch, '_rf'))]
+  // Priors on the whole model or on controls: one line naming them.
+  const other = Object.keys(priors).filter((f) => !/_(m|rf)$/.test(f) || /_o(m|rf)$/.test(f))
+  if (other.length)
+    items.push(new Prior('model-wide', other.map((f) => `${f} ${priors[f]?.dist ?? '?'}`).join(' · '), other.map((f) => `\`${f}\`: ${JSON.stringify(priors[f])}`).join('\n\n')))
+  const known = new Set([...media, ...rf, 'dist', 'shift', 'default', ...PRIOR_ARGS])
+  const unknown = [...new Set([...channelFields('_m'), ...channelFields('_rf')].flatMap((f) => (priors[f] && perItem(priors[f]) ? Object.keys(priors[f]) : [])))].filter((k) => !known.has(k))
   return [...items, ...unknown.map((c) => new Prior(c, 'not a channel of the dataset', `**${c}** has a prior, but ${m.dataset ?? 'the dataset'} has no such channel: the fit will refuse it.`, true))]
 }
 

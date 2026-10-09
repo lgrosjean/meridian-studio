@@ -6,11 +6,16 @@ model_spec:
   max_lag: 8
   adstock_decay_spec: geometric
   enable_aks: true
-# priors:                     # LogNormal on each channel's ROI (mean, sd in ROI units); omitted channels keep Meridian's
-#   roi:
+# priors:                     # PriorDistribution fields, each one TensorFlow Probability distribution (`dist`);
+#                               its arguments once for all, or per channel with a default. Unset fields keep Meridian's.
+#   roi_m:                      # ROI per channel; LogNormal also takes mean/sd in ROI units
+#     dist: LogNormal
+#     default: { mean: 1.0, sd: 1.0 }
 {{roi}}
-#   adstock:                  # geometric decay per channel, TruncatedNormal on [0, 1]
-#     <channel>: { loc: 0.5, scale: 0.2, low: 0.0, high: 1.0 }
+#   alpha_m:                    # adstock decay, on [0, 1]
+#     dist: Beta
+#     default: { concentration1: 1, concentration0: 1 }
+#   ec_m: { dist: TruncatedNormal, loc: 0.8, scale: 0.8, low: 0.1, high: 10 }   # Hill half-saturation
 sampling:
   n_chains: [2, 2]
   n_adapt: 1000

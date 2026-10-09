@@ -26,16 +26,17 @@ assert.equal(cols.sentiment_score_control.description, 'control')
 assert.equal(cols.revenue_per_conversion.description, 'revenue per KPI')
 
 // A model's channels: its priors, Meridian's default for the others (a model of the example dataset, made here).
-fs.writeFileSync(join(folder, 'models', 'check-priors.yaml'), 'dataset: synthetic\npriors: { roi: { ch0: { mean: 1.5, sd: 0.8 } } }\n')
+fs.writeFileSync(join(folder, 'models', 'check-priors.yaml'), 'dataset: synthetic\npriors:\n  roi_m: { dist: LogNormal, default: { mean: 1, sd: 1 }, ch0: { mean: 1.5, sd: 0.8 } }\n  alpha_m: { dist: Beta, concentration1: 2, concentration0: 3 }\n  sigma: { dist: HalfNormal, scale: 3 }\n')
 let priors
 try {
   priors = Object.fromEntries(_priorsOf('check-priors').map((p) => [p.label, p.description]))
 } finally {
   fs.rmSync(join(folder, 'models', 'check-priors.yaml'))
 }
-assert.deepEqual(Object.keys(priors), ['ch0', 'ch1', 'ch2', 'ch3'])
-assert.equal(priors.ch0, 'ROI 1.50 ± 0.80 · adstock uniform')
-assert.equal(priors.ch1, 'ROI 1.83 ± 2.04 (default) · adstock uniform')
+assert.deepEqual(Object.keys(priors), ['ch0', 'ch1', 'ch2', 'ch3', 'model-wide'])
+assert.equal(priors.ch0, 'ROI 1.50 ± 0.80 · adstock Beta(2.00, 3.00)')
+assert.equal(priors.ch1, 'ROI 1.00 ± 1.00 · adstock Beta(2.00, 3.00)')
+assert.equal(priors['model-wide'], 'sigma HalfNormal')
 
 // A column the CSV lacks comes last in red; a CSV column the YAML leaves out is greyed.
 folder = fs.mkdtempSync(join(os.tmpdir(), 'meridian-'))
@@ -48,9 +49,9 @@ assert.deepEqual(got, [
   ['unused', '', 'meridian-column'], ['radio_imp', 'media: not in the CSV', '']
 ])
 fs.mkdirSync(join(folder, 'models'))
-fs.writeFileSync(join(folder, 'models', 'm.yaml'), 'dataset: d\npriors:\n  roi: { tv: { mean: 2, sd: 1 }, radio: { mean: 1, sd: 1 } }\n  adstock: { tv: { loc: 0.6, low: 0.4, high: 0.85 } }\n')
+fs.writeFileSync(join(folder, 'models', 'm.yaml'), 'dataset: d\nmodel_spec: { media_prior_type: mroi }\npriors:\n  roi_m: { dist: LogNormal, tv: { mean: 2, sd: 1 }, radio: { mean: 1, sd: 1 } }\n  alpha_m: { dist: TruncatedNormal, tv: { loc: 0.6, scale: 0.2, low: 0.4, high: 0.85 } }\n')
 assert.deepEqual(_priorsOf('m').map((p) => [p.label, p.description]), [
-  ['tv', 'ROI 2.00 ± 1.00 · adstock 0.60 [0.40–0.85]'], ['radio', 'not a channel of the dataset']
+  ['tv', 'mroi (default) · ROI 2.00 ± 1.00 (unused) · adstock TruncatedNormal(0.60, 0.20, 0.40, 0.85)'], ['radio', 'not a channel of the dataset']
 ])
 // A model's runs: newest first, a cut line skipped, the one in result.json marked current.
 const line = (at, id, r2) => JSON.stringify({ at, mlflow: { run_id: id, report: 'x.html' }, fit: { r2, mape: 0.05, r_hat_max: null } })

@@ -2,7 +2,7 @@
   "name": "meridian-studio",
   "displayName": "Meridian Studio",
   "description": "Unofficial. Google Meridian marketing mix models as code: datasets, models and budget scenarios as YAML, fitted and optimized from your editor.",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publisher": "lgrosjean",
   "license": "Apache-2.0",
   "icon": "media/meridian.png",

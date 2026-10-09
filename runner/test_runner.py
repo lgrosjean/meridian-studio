@@ -43,9 +43,21 @@ def main():
         (project / ds).write_text(yaml_text)
 
         (project / "models/tiny.yaml").write_text(
-            "dataset: synthetic\nmodel_spec: { max_lag: 4 }\npriors: { roi: { ch1: { mean: 2, sd: 1 } }, adstock: { ch0: { loc: 0.6, scale: 0.2, low: 0.4, high: 0.85 } } }\n"
+            "dataset: synthetic\nmodel_spec: { max_lag: 4 }\n"
+            "priors:\n"
+            "  roi_m: { dist: LogNormal, default: { mean: 1, sd: 1 }, ch1: { mean: 2, sd: 1 } }\n"
+            "  alpha_m: { dist: TruncatedNormal, default: { loc: 0.5, scale: 10, low: 0, high: 1 }, ch0: { loc: 0.6, scale: 0.2, low: 0.4, high: 0.85 } }\n"
+            "  ec_m: { dist: Gamma, concentration: 2, rate: 2 }\n"
+            "  sigma: { dist: HalfNormal, scale: 3 }\n"
             "sampling: { n_prior: 50, n_chains: [1], n_adapt: 50, n_burnin: 0, n_keep: 50, seed: 1 }\n"
         )
+        # A prior Meridian cannot take fails readably, before any sampling.
+        good = (project / "models/tiny.yaml").read_text()
+        (project / "models/tiny.yaml").write_text(good.replace("ch1: { mean: 2, sd: 1 }", "ch9: { mean: 2, sd: 1 }"))
+        code, ev = run("fit", str(project), "models/tiny.yaml")
+        assert code == 1 and "ch9 not in" in ev[-1]["message"], ev
+        (project / "models/tiny.yaml").write_text(good)
+
         code, ev = run("fit", str(project), "models/tiny.yaml")
         assert code == 0, ev
         r = json.loads((project / "models/tiny.result.json").read_text(), parse_constant=refuse)
@@ -56,7 +68,7 @@ def main():
         assert "mlruns/" in (project / ".gitignore").read_text()
         runs = [json.loads(l, parse_constant=refuse) for l in (project / "models/tiny.runs.jsonl").read_text().splitlines()]
         assert len(runs) == 1 and runs[0]["mlflow"]["run_id"] == r["mlflow"]["run_id"], runs
-        assert runs[0]["config"]["priors"]["roi"]["ch1"] == {"mean": 2, "sd": 1} and runs[0]["at"].endswith("+00:00"), runs[0]
+        assert runs[0]["config"]["priors"]["roi_m"]["ch1"] == {"mean": 2, "sd": 1} and runs[0]["at"].endswith("+00:00"), runs[0]
 
         (project / "scenarios/tiny-plus-10.yaml").write_text(
             "model: tiny\nbudget: +10%\nbounds: { lower: 0.3, upper: 0.3 }\nchannels: { ch0: { lower: 0.1, upper: 0.5 } }\n"

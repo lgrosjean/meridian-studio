@@ -60,6 +60,25 @@ media_to_channel: { Channel0_impression: ch0, Channel1_impression: ch1 }
 media_spend_to_channel: { Channel0_spend: ch0, Channel1_spend: ch1 }
 ```
 
+A model's priors are Meridian's [`PriorDistribution`](https://developers.google.com/meridian/reference/api/meridian/model/prior_distribution/PriorDistribution)
+fields, each one TensorFlow Probability distribution. Its arguments go once for every channel, or per channel
+with a `default`; a LogNormal also takes `mean` and `sd` in its own units (an ROI of 1.2 ± 0.6). Fields left
+out keep Meridian's defaults; completion lists all of them, with what each one is.
+
+```yaml
+priors:
+  roi_m:                    # used when model_spec.media_prior_type is roi (the default)
+    dist: LogNormal
+    default: { mean: 1.0, sd: 1.0 }
+    tv: { mean: 1.5, sd: 0.8 }
+  alpha_m:                  # adstock decay
+    dist: Beta
+    default: { concentration1: 1, concentration0: 1 }
+    tv: { concentration1: 6, concentration0: 4 }
+  ec_m: { dist: TruncatedNormal, loc: 0.8, scale: 0.8, low: 0.1, high: 10 }
+  sigma: { dist: HalfNormal, scale: 3 }
+```
+
 ## Settings
 
 | Setting                     | Default | Meaning                                                                 |
@@ -87,6 +106,8 @@ media_spend_to_channel: { Channel0_spend: ch0, Channel1_spend: ch1 }
 - `bun run test`: type check, bundle, the tree's logic, then the runner (fits the example tiny, optimizes it).
 - `bun run build && HOME=$(mktemp -d) PATH=/usr/bin:/bin $(which node) scripts/check-uv.js` checks the uv
   install (downloads uv).
+- `uv run --project runner scripts/gen_priors_schema.py` rewrites the priors part of the model schema from the
+  installed Meridian (after an upgrade).
 - `bun run package` builds the `.vsix`; `cursor --install-extension meridian-studio-*.vsix` installs it.
 
 ## License
