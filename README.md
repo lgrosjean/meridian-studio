@@ -1,24 +1,49 @@
 # Meridian Studio
 
-> Unofficial, community project. Not affiliated with, endorsed by or sponsored by Google.
-> Meridian and the Meridian logo are trademarks of Google LLC. Google's own product named
-> Meridian Studio is at https://developers.google.com/meridian/studio; this extension is unrelated.
+> **Unofficial community project.** Not affiliated with, endorsed by or sponsored by Google.
+> Meridian and the Meridian logo are trademarks of Google LLC. Google's own product named Meridian Studio
+> is at https://developers.google.com/meridian/studio; this extension is unrelated.
 
-A VS Code / Cursor extension that runs [Google Meridian](https://github.com/google/meridian) from three
-folders of YAML files:
+Marketing mix models as code. Run [Google Meridian](https://github.com/google/meridian) from VS Code or Cursor:
+datasets, models and budget scenarios are YAML files in your repo, fitted and optimized from the sidebar, tracked
+in MLflow.
 
-| Sidebar   | Folder        | The YAML says                                   | Play runs                               |
-|-----------|---------------|-------------------------------------------------|-----------------------------------------|
-| Datasets  | `datasets/`   | a CSV and how Meridian reads it (`CsvDataLoader`'s arguments) | nothing: a fit reads the CSV |
-| Models    | `models/`     | the dataset, `ModelSpec`, priors, sampling      | the fit, into MLflow + `<name>.result.json` |
-| Scenarios | `scenarios/`  | the model, a budget, bounds per channel         | `BudgetOptimizer`, into `<name>.result.json` + `<name>.html` |
+![A fit's results: quality, ROI by channel with its 90% interval, the configuration it ran](media/screenshots/fit.png)
 
-You edit the YAML in the editor; the extension lists, launches and records. A run leaves `<name>.run.json`
-next to its file, which the tree reads (running, done, failed, outdated when the YAML or its input changed).
-Fits and optimizations each produce Meridian's own HTML report, opened in a panel beside the editor from the results panel (its charts load Vega from gstatic.com, so they need the network).
+![A budget scenario: spend by channel before and after the optimizer](media/screenshots/scenario.png)
 
-A dataset is [`CsvDataLoader`](https://developers.google.com/meridian/reference/api/meridian/data/load/CsvDataLoader)'s
-arguments in YAML, `csv` standing for `csv_path` (relative to the project, or absolute):
+## Getting started
+
+1. Open a folder. Click the Meridian icon in the activity bar, then **New dataset** and pick your weekly CSV.
+   The YAML opens with the CSV's header in a comment: map its columns to Meridian's roles.
+2. **New model** on that dataset: `ModelSpec`, priors, sampling. Click **▶ Fit** above the file.
+3. **New scenario** on that model: a budget, bounds per channel. Click **▶ Optimize**.
+
+The first run installs what it needs: [uv](https://docs.astral.sh/uv/) if missing (after asking; into the
+extension's own storage, no PATH change), then Python and Meridian (a few minutes and about 1 GB, once).
+Fits run on your machine, on CPU.
+
+## What it does
+
+| Sidebar   | Folder       | The YAML says                                                  | ▶ runs                                   |
+|-----------|--------------|----------------------------------------------------------------|------------------------------------------|
+| Datasets  | `datasets/`  | a CSV and how Meridian reads it (`CsvDataLoader`'s arguments)  | nothing: a fit reads the CSV             |
+| Models    | `models/`    | the dataset, `ModelSpec`, priors, sampling                     | the fit, logged to MLflow                |
+| Scenarios | `scenarios/` | the model, a budget, bounds per channel, or an ROI target      | Meridian's `BudgetOptimizer` on that fit |
+
+- **Completion and errors while you type**, from a JSON schema per kind (through the YAML extension, installed
+  with this one). Columns named in a dataset but absent from its CSV show in red in the tree.
+- **The tree explains each file**: a dataset unfolds into its CSV columns and their roles, unused ones greyed;
+  a model into its priors per channel and its runs.
+- **Results beside the editor** after each run: R², MAPE, r-hat, divergences, ROI by channel with its interval;
+  or a scenario's spend before and after. Meridian's own HTML report opens in the editor too (its charts load
+  Vega from gstatic.com, so they need the network).
+- **History**: every fit appends a line to `<model>.runs.jsonl` (when, the configuration, what it found), listed
+  under the model; click one to see its results again.
+- **Outdated runs** are flagged when a YAML or its CSV changed since. Rename and delete carry a file's run
+  records along and update the files that name it.
+
+A dataset, for example:
 
 ```yaml
 name: synthetic
@@ -35,20 +60,11 @@ media_to_channel: { Channel0_impression: ch0, Channel1_impression: ch1 }
 media_spend_to_channel: { Channel0_spend: ch0, Channel1_spend: ch1 }
 ```
 
-New dataset picks the CSV and writes this skeleton with the CSV's header in a comment.
+## Settings
 
-`schemas/` holds a JSON schema per kind, wired to `datasets/`, `models/` and `scenarios/` through the YAML
-extension (installed with this one): completion, hover docs and errors while you type.
-
-## Setup
-
-- Nothing to install by hand. The first Fit looks for [uv](https://docs.astral.sh/uv/); if it is missing,
-  the extension offers to install it (Astral's installer, pinned, into the extension's own storage: no PATH
-  or shell profile change). uv then installs Python and Meridian, once (a few minutes, about 1 GB).
-- Build: `bun install && bun run build`, then F5 in Cursor opens `examples/` with the extension loaded.
-- Install for good: `bun run package` then `cursor --install-extension meridian-studio-0.1.0.vsix`.
-- Check the uv install: `bun run build && HOME=$(mktemp -d) PATH=/usr/bin:/bin $(which node) scripts/check-uv.js` (downloads uv).
-- Check: `bun run test` (the tree's dataset columns, then the runner: fits the example tiny, optimizes it).
+| Setting                     | Default | Meaning                                                                 |
+|-----------------------------|---------|-------------------------------------------------------------------------|
+| `meridian.mlflowTrackingUri` | empty   | Where fits are logged. Empty: `mlflow.db` and `mlruns/` in the project. |
 
 ## Files
 
@@ -58,17 +74,23 @@ extension (installed with this one): completion, hover docs and errors while you
   datasets/synthetic.yaml          which CSV, which columns, which channels
   models/synthetic-v1.yaml
   models/synthetic-v1.result.json  the latest fit: quality, ROI per channel, where MLflow put the artifacts
-  models/synthetic-v1.runs.jsonl   every fit, one line each: when, the config it ran, what it found
+  models/synthetic-v1.runs.jsonl   every fit, one line each
   scenarios/plus-10.yaml
   scenarios/plus-10.result.json    spend and outcome per channel, before and after
   scenarios/plus-10.html           Meridian's optimization summary
-  mlflow.db, mlruns/               the local MLflow store (ignored by git)
+  mlflow.db, mlruns/               the local MLflow store (keep it out of git)
 ```
 
-Set `meridian.mlflowTrackingUri` to log fits to a remote MLflow server instead of the local store.
+## Development
+
+- `bun install`, then F5 opens `examples/` with the extension loaded.
+- `bun run test`: type check, bundle, the tree's logic, then the runner (fits the example tiny, optimizes it).
+- `bun run build && HOME=$(mktemp -d) PATH=/usr/bin:/bin $(which node) scripts/check-uv.js` checks the uv
+  install (downloads uv).
+- `bun run package` builds the `.vsix`; `cursor --install-extension meridian-studio-*.vsix` installs it.
 
 ## License
 
-Apache License 2.0, see `LICENSE` and `NOTICE`. [Google Meridian](https://github.com/google/meridian) is Apache 2.0 and is installed by
-uv at run time, not bundled. The icons in `media/` reproduce the Meridian logo, a Google trademark: they are
-not covered by this license.
+Apache License 2.0, see `LICENSE` and `NOTICE`. Google Meridian is Apache 2.0 and is installed at run time, not
+bundled. The icons in `media/` reproduce the Meridian logo, a Google trademark, and are not covered by this
+license.
