@@ -15,7 +15,7 @@ const vscode = {
 }
 const load = Module._load
 Module._load = (request, ...rest) => (request === 'vscode' ? vscode : load(request, ...rest))
-const { _columnsOf, _priorsOf, _modelChildren, _folderChildren } = require('../out/extension.js')
+const { _columnsOf, _priorsOf, _modelChildren, _folderChildren, _referenceIn } = require('../out/extension.js')
 
 const cols = Object.fromEntries(_columnsOf('synthetic').map((c) => [c.label, c]))
 assert.equal(cols.time.description, 'time')
@@ -62,4 +62,14 @@ assert.deepEqual(_folderChildren(runs).map((r) => [r.command.arguments[1].mlflow
   ['b', 'R² 0.95 · MAPE 5.0%'], ['a', 'R² 0.90 · MAPE 5.0% · current']
 ])
 fs.rmSync(folder, { recursive: true })
+// The line naming a file: where its value sits, and the file it means.
+const ref = (text, root) => _referenceIn(text, root, '/p')
+assert.deepEqual(ref('name: m\ndataset: national-media   # the data\n', 'models'),
+  { line: 1, start: 9, end: 23, kind: 'dataset', value: 'national-media', file: '/p/datasets/national-media.yaml' })
+assert.deepEqual(ref('# model: no\nmodel: "v1"\n', 'scenarios'),
+  { line: 1, start: 8, end: 10, kind: 'model', value: 'v1', file: '/p/models/v1.yaml' })
+assert.equal(ref('csv: /data/x.csv\n', 'datasets').file, '/data/x.csv')
+assert.equal(ref('csv: data/x.csv\n', 'datasets').file, '/p/data/x.csv')
+assert.equal(ref('  dataset: nested\nsampling: {}\n', 'models'), undefined) // top-level keys only
+assert.equal(ref('dataset:\n', 'models'), undefined)
 console.log('ok')

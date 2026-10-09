@@ -161,20 +161,55 @@ function openReport(root: Root, name: string) {
 // --- The link above the file ------------------------------------------------------------------
 // ▶ Fit / ▶ Optimize (or ■ Stop) on the first line of a model or a scenario, its last run's state, Show results.
 
+// --- What a file names: its dataset, its model, its CSV ------------------------------------------
+// The line `dataset: x` of a model, `model: x` of a scenario, `csv: path` of a dataset: where the value sits on
+// its line and the file it means. The link above that line and Cmd+click (go to definition) both use it.
+
+export type Reference = { line: number; start: number; end: number; kind: 'dataset' | 'model' | 'csv'; value: string; file: string }
+const REFERENCE_KEY: Partial<Record<Root, 'dataset' | 'model' | 'csv'>> = { models: 'dataset', scenarios: 'model', datasets: 'csv' }
+function referenceIn(text: string, root: Root, dir: string): Reference | undefined {
+  const kind = REFERENCE_KEY[root]
+  if (!kind) return
+  const lines = text.split(/\r?\n/)
+  for (let line = 0; line < lines.length; line++) {
+    const m = lines[line].match(new RegExp(`^(${kind}:[ \\t]*)(["']?)([^#"'\\n]*?)\\2[ \\t]*(?:#.*)?$`))
+    if (!m || !m[3]) continue
+    const value = m[3]
+    const start = m[1].length + m[2].length
+    const file = kind === 'csv' ? (isAbsolute(value) ? value : join(dir, value)) : join(dir, kind === 'dataset' ? 'datasets' : 'models', `${value}.yaml`)
+    return { line, start, end: start + value.length, kind, value, file }
+  }
+}
+/** A YAML of this project's datasets/, models/ or scenarios/: its kind and name, or nothing. */
+function studioFile(uri: vscode.Uri): { root: Root; name: string; dir: string } | undefined {
+  let dir: string
+  try {
+    dir = project()
+  } catch {
+    return
+  }
+  const root = basename(dirname(uri.fsPath)) as Root
+  if (uri.scheme !== 'file' || !ROOTS.includes(root) || dirname(dirname(uri.fsPath)) !== dir || !uri.fsPath.endsWith('.yaml')) return
+  return { root, name: basename(uri.fsPath, '.yaml'), dir }
+}
+
+const definitions: vscode.DefinitionProvider = {
+  provideDefinition(doc, position) {
+    const f = studioFile(doc.uri)
+    const ref = f && referenceIn(doc.getText(), f.root, f.dir)
+    if (!ref || position.line !== ref.line || position.character < ref.start || position.character > ref.end || !fs.existsSync(ref.file)) return
+    return [{ originSelectionRange: new vscode.Range(ref.line, ref.start, ref.line, ref.end), targetUri: vscode.Uri.file(ref.file), targetRange: new vscode.Range(0, 0, 0, 0) }]
+  }
+}
+
 class Lenses implements vscode.CodeLensProvider {
   private changed = new vscode.EventEmitter<void>()
   onDidChangeCodeLenses = this.changed.event
   refresh = () => this.changed.fire()
   provideCodeLenses(doc: vscode.TextDocument): vscode.CodeLens[] {
-    let dir: string
-    try {
-      dir = project()
-    } catch {
-      return []
-    }
-    const root = basename(dirname(doc.uri.fsPath)) as Root
-    if (!['models', 'scenarios'].includes(root) || dirname(dirname(doc.uri.fsPath)) !== dir || !doc.uri.fsPath.endsWith('.yaml')) return []
-    const name = basename(doc.uri.fsPath, '.yaml')
+    const f = studioFile(doc.uri)
+    if (!f || f.root === 'datasets') return []
+    const { root, name, dir } = f
     const at = new vscode.Range(0, 0, 0, 0)
     const lens = (title: string, command: string, tooltip?: string) => new vscode.CodeLens(at, { title, command, tooltip, arguments: [{ root, name }] })
     const item = new Item(root, name)
@@ -182,6 +217,16 @@ class Lenses implements vscode.CodeLensProvider {
     const out = [running ? lens('$(debug-stop) Stop', 'meridian.stop') : lens(`$(play) ${KINDS[root].verb}`, 'meridian.run', 'Saves the file, then runs it')]
     if (item.description) out.push(lens(String(item.description), 'meridian.output', 'Show the runner output'))
     if (fs.existsSync(join(dir, root, `${name}.result.json`))) out.push(lens('$(preview) Show results', 'meridian.results'))
+    // Above the line naming its dataset or model: open it (Cmd+click on the name does the same).
+    const ref = referenceIn(doc.getText(), root, dir)
+    if (ref) {
+      const range = new vscode.Range(ref.line, 0, ref.line, 0)
+      out.push(
+        fs.existsSync(ref.file)
+          ? new vscode.CodeLens(range, { title: `$(go-to-file) Open ${ref.kind} ${ref.value}`, command: 'vscode.open', arguments: [vscode.Uri.file(ref.file)], tooltip: `Cmd+click ${ref.value} does the same` })
+          : new vscode.CodeLens(range, { title: `$(warning) No ${ref.kind} ${ref.value} in ${ref.kind}s/`, command: '' })
+      )
+    }
     return out
   }
 }
@@ -646,6 +691,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('meridian.showRun', guarded(showRun)),
     vscode.commands.registerCommand('meridian.output', () => out.show(true)),
     vscode.languages.registerCodeLensProvider({ language: 'yaml', scheme: 'file' }, lenses),
+    vscode.languages.registerDefinitionProvider({ language: 'yaml', scheme: 'file' }, definitions),
     vscode.commands.registerCommand('meridian.newDataset', guarded(() => create(join(runner, 'templates'), 'datasets'))),
     vscode.commands.registerCommand('meridian.newModel', guarded(() => create(join(runner, 'templates'), 'models'))),
     vscode.commands.registerCommand('meridian.newScenario', guarded(() => create(join(runner, 'templates'), 'scenarios'))),
@@ -655,4 +701,4 @@ export function activate(context: vscode.ExtensionContext) {
 
 export function deactivate() {}
 export const _setStorage = (dir: string) => (storage = dir)
-export { fingerprintOf as _fingerprintOf, ensureUv as _ensureUv, columnsOf as _columnsOf, priorsOf as _priorsOf, modelChildren as _modelChildren, folderChildren as _folderChildren } // for scripts/check-columns.js
+export { referenceIn as _referenceIn, fingerprintOf as _fingerprintOf, ensureUv as _ensureUv, columnsOf as _columnsOf, priorsOf as _priorsOf, modelChildren as _modelChildren, folderChildren as _folderChildren } // for scripts/check-columns.js
