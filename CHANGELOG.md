@@ -8,6 +8,9 @@
 - Completion and hover docs for every prior, generated from Meridian.
 - The tree shows each channel's priors whatever their distribution, and flags a prior the prior type leaves unused.
 - Open a model's dataset or a scenario's model from the link above the line naming it, or Cmd+click the name.
+- While a fit or an optimization runs: a progress bar atop its view, and the status bar shows its phase and time
+  ("Fit national-media-v1 · posterior · 2 min 10"; click for the output). When it ends, a notification says how
+  it went, with Show results; the results panel no longer opens by itself.
 
 ## 0.1.1
 

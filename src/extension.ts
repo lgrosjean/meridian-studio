@@ -486,6 +486,33 @@ class Tree implements vscode.TreeDataProvider<vscode.TreeItem> {
 
 const write = (root: Root, name: string, r: RunRecord) => fs.writeFileSync(join(project(), root, `${name}.run.json`), JSON.stringify(r, null, 2) + '\n')
 
+// --- Runs in progress: the view's progress bar, the status bar, the notification at the end ------------
+
+type Live = { verb: string; name: string; started: number; phase: string }
+const live = new Map<string, Live>() // by root/name, in start order
+let status: vscode.StatusBarItem | undefined
+let ticker: ReturnType<typeof setInterval> | undefined
+const elapsed = (ms: number) => {
+  const s = Math.floor(ms / 1000)
+  return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')}`
+}
+/** The status bar item: the first run going, its phase and time; how many others. Ticks each second while any runs. */
+function showLive() {
+  if (!status) return
+  const runs = [...live.values()]
+  if (!runs.length) {
+    status.hide()
+    clearInterval(ticker)
+    ticker = undefined
+    return
+  }
+  const line = (r: Live) => `${r.verb} ${r.name} · ${r.phase || 'starting'} · ${elapsed(Date.now() - r.started)}`
+  status.text = `$(sync~spin) ${line(runs[0])}${runs.length > 1 ? ` (+${runs.length - 1})` : ''}`
+  status.tooltip = `${runs.map(line).join('\n')}\n\nClick for the runner's output`
+  status.show()
+  ticker ??= setInterval(showLive, 1000)
+}
+
 async function run(runner: string, out: vscode.OutputChannel, problems: vscode.DiagnosticCollection, root: Root, name: string, refresh: () => void) {
   const kind = KINDS[root]
   const key = `${root}/${name}`
@@ -513,6 +540,13 @@ async function run(runner: string, out: vscode.OutputChannel, problems: vscode.D
   out.appendLine(`\n$ uv ${args.join(' ')}`)
   const child = spawn(uv, args, { cwd: dir, env })
   children.set(key, child)
+  const started = Date.now()
+  const going: Live = { verb: kind.verb, name, started, phase: '' }
+  live.set(key, going)
+  let stopProgress = () => {}
+  const progress = new Promise<void>((resolve) => (stopProgress = resolve))
+  vscode.window.withProgress({ location: { viewId: `meridian.${root}` } }, () => progress) // the bar atop the view
+  showLive()
   refresh()
 
   let last: { event: string; summary?: Record<string, unknown>; message?: string } | undefined
@@ -539,6 +573,10 @@ async function run(runner: string, out: vscode.OutputChannel, problems: vscode.D
       problems.set(uri, checks.map((c) => new vscode.Diagnostic(new vscode.Range(0, 0, 0, 1), c.text ? `${c.title}: ${c.text}` : c.title, severity[c.status] ?? severity.info)))
     }
     if (e.event === 'done' || e.event === 'error') last = e as typeof last
+    if (e.event === 'phase' && e.state === 'run') {
+      going.phase = String(e.name)
+      showLive()
+    }
     out.appendLine(describe(e))
   })
   lines(child.stderr!, (l) => out.appendLine(l))
@@ -548,21 +586,31 @@ async function run(runner: string, out: vscode.OutputChannel, problems: vscode.D
     if (finished) return
     finished = true
     children.delete(key)
+    live.delete(key)
+    stopProgress()
+    showLive()
     if (error) out.appendLine(`Error: ${error}`)
     const ok = !error && last?.event === 'done'
-    write(root, name, {
+    const ended: RunRecord = {
       ...record,
       status: ok ? 'Done' : 'Failed',
       finishedAt: new Date().toISOString(),
       ...(ok ? { summary: last!.summary } : { error: error ?? last?.message ?? 'The runner stopped without saying why (see Output)' }),
       ...(checks.length && { checks })
-    })
+    }
+    write(root, name, ended)
     refresh()
-    if (ok) results(root, name)
-    if (!ok) vscode.window.showErrorMessage(`${kind.verb} ${name}: ${error ?? last?.message ?? 'failed (see Output)'}`)
+    results(root, name, false) // a panel already open shows the new results
+    // Told when it ends, whatever is in front: a fit can take ten minutes.
+    const took = elapsed(Date.now() - started)
+    if (ok)
+      vscode.window.showInformationMessage(`${kind.verb} ${name} done in ${took}: ${summaryLine(root, ended)}`, 'Show results').then((pick) => pick && results(root, name))
+    else if (child.killed) vscode.window.showInformationMessage(`${kind.verb} ${name} stopped after ${took}`)
+    else
+      vscode.window.showErrorMessage(`${kind.verb} ${name} failed after ${took}: ${error ?? last?.message ?? 'see the output'}`, 'Show output').then((pick) => pick && out.show())
   }
   child.on('error', (e) => finish(e.message))
-  child.on('close', (code) => finish(code === 0 || last?.event === 'error' ? undefined : `The runner exited with code ${code}`))
+  child.on('close', (code) => finish(code === 0 || last?.event === 'error' ? undefined : child.killed ? 'Stopped' : `The runner exited with code ${code}`))
 }
 
 // One readable line per runner event, for the Output panel.
@@ -678,6 +726,10 @@ export function activate(context: vscode.ExtensionContext) {
   const out = vscode.window.createOutputChannel('Meridian Studio')
   const problems = vscode.languages.createDiagnosticCollection('meridian')
   const trees = Object.fromEntries(ROOTS.map((r) => [r, new Tree(r)])) as Record<Root, Tree>
+  status = vscode.window.createStatusBarItem('meridian.run', vscode.StatusBarAlignment.Left, 50)
+  status.name = 'Meridian run'
+  status.command = 'meridian.output'
+  context.subscriptions.push(status, { dispose: () => clearInterval(ticker) })
   const lenses = new Lenses()
   const refresh = () => {
     ROOTS.forEach((r) => trees[r].refresh())
