@@ -655,4 +655,4 @@ export function activate(context: vscode.ExtensionContext) {
 
 export function deactivate() {}
 export const _setStorage = (dir: string) => (storage = dir)
-export { ensureUv as _ensureUv, columnsOf as _columnsOf, priorsOf as _priorsOf, modelChildren as _modelChildren, folderChildren as _folderChildren } // for scripts/check-columns.js
+export { fingerprintOf as _fingerprintOf, ensureUv as _ensureUv, columnsOf as _columnsOf, priorsOf as _priorsOf, modelChildren as _modelChildren, folderChildren as _folderChildren } // for scripts/check-columns.js

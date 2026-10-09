@@ -67,6 +67,7 @@ def main():
         b = o["budget"]
         assert abs(b["after"] / b["historical"] - 1.1) < 1e-3 and abs(b["before"] - b["after"]) < 1, b
         assert o["model_run_id"] == r["mlflow"]["run_id"] and (project / o["report"]).exists()
+        assert set(ev[-1]["summary"]["roi"]) == {"before", "after"}, ev[-1]  # the tree shows ROI before → after
         assert [c["name"] for c in o["channels"]] == ["ch0", "ch1", "ch2", "ch3"]
         (project / "scenarios/bad.yaml").write_text("model: tiny\nbudget: lots\n")
         code, ev = run("optimize", str(project), "scenarios/bad.yaml")

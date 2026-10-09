@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1
+
+- Fix: a finished scenario showed "ROI ? → ?" in the tree; the optimizer now reports ROI, budget and outcome before and after.
+- README: screenshots of the extension at work.
+
 ## 0.1.0
 
 - Datasets, models and scenarios as YAML in `datasets/`, `models/`, `scenarios/`, with JSON schemas for completion.

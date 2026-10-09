@@ -115,4 +115,5 @@ def optimize(project: Path, path: str, emit) -> dict:
     }
     (project / "scenarios" / f"{name}.result.json").write_text(json.dumps(clean(result), indent=2, allow_nan=False) + "\n")
     emit(event="phase", name="outputs", state="done")
-    return {k: round(v["after"], 4) for k, v in totals.items()} | {"fingerprint": sha(json.dumps(result, sort_keys=True))} | {"channels": len(rows)}
+    rounded = {k: {kk: round(vv, 4) for kk, vv in v.items()} for k, v in totals.items()}
+    return rounded | {"channels": len(rows), "fingerprint": sha(json.dumps(result, sort_keys=True))}

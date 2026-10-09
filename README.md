@@ -8,9 +8,9 @@ Marketing mix models as code. Run [Google Meridian](https://github.com/google/me
 datasets, models and budget scenarios are YAML files in your repo, fitted and optimized from the sidebar, tracked
 in MLflow.
 
-![A fit's results: quality, ROI by channel with its 90% interval, the configuration it ran](media/screenshots/fit.png)
+![A model open in VS Code: the Meridian sidebar with the dataset's columns and roles, the model's runs; the YAML with ▶ Fit above it; the fit's results beside](media/screenshots/model.png)
 
-![A budget scenario: spend by channel before and after the optimizer](media/screenshots/scenario.png)
+![A budget scenario: its YAML with ▶ Optimize above it, and the spend by channel before and after Meridian's optimizer](media/screenshots/scenario.png)
 
 ## Getting started
 
