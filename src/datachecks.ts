@@ -20,6 +20,30 @@ type Env = {
   isDataset: (uri: vscode.Uri) => boolean
 }
 
+export type RunnerEvent = Record<string, any>
+/** The runner run quietly (no record, no notification): its events, and what it said on stderr. */
+export function runQuietly(uv: string, runner: string, project: string, args: string[], started?: (child: ChildProcess) => void) {
+  return new Promise<{ events: RunnerEvent[]; err: string; code: number | null; child: ChildProcess }>((resolve) => {
+    const child = spawn(uv, ['run', '--project', runner, join(runner, 'runner.py'), ...args], { cwd: project, env: { ...process.env, PYTHONUNBUFFERED: '1' } })
+    started?.(child)
+    let out = ''
+    let err = ''
+    child.stdout!.on('data', (b: Buffer) => (out += b.toString()))
+    child.stderr!.on('data', (b: Buffer) => (err += b.toString()))
+    child.on('error', (e) => (err += e.message))
+    child.on('close', (code) => {
+      const events = out.split('\n').flatMap((l) => {
+        try {
+          return [JSON.parse(l)]
+        } catch {
+          return []
+        }
+      })
+      resolve({ events, err, code, child })
+    })
+  })
+}
+
 /** Line and character of an offset, for a file no editor has open. */
 const positionIn = (text: string, offset: number) => {
   const before = text.slice(0, offset)
@@ -65,40 +89,23 @@ export function registerDataChecks(context: vscode.ExtensionContext, env: Env) {
     children.get(name)?.kill() // a newer run supersedes an older one
     states.set(name, { ...states.get(name), running: true })
     changed.fire()
-    const args = ['run', '--project', env.runner, join(env.runner, 'runner.py'), 'check', env.project(), `datasets/${name}.yaml`]
-    const done = new Promise<State>((resolve) => {
-      const child = spawn(uv, args, { cwd: env.project(), env: { ...process.env, PYTHONUNBUFFERED: '1' } })
-      children.set(name, child)
-      let out = ''
-      let err = ''
-      child.stdout!.on('data', (b: Buffer) => (out += b.toString()))
-      child.stderr!.on('data', (b: Buffer) => (err += b.toString()))
-      child.on('error', (e) => (err += e.message))
-      child.on('close', (code) => {
-        if (children.get(name) !== child) return resolve(states.get(name) ?? {})
-        children.delete(name)
-        const events = out.split('\n').flatMap((l) => {
-          try {
-            return [JSON.parse(l)]
-          } catch {
-            return []
-          }
-        })
-        const items: Item[] | undefined = events.find((e) => e.event === 'checks')?.items
-        const message: string | undefined = events.find((e) => e.event === 'error')?.message
-        let state: State
-        if (items) {
-          place(name, items)
-          state = { errors: items.filter((i) => i.status === 'fail').length, warnings: items.filter((i) => i.status === 'review').length }
-        } else {
-          diagnostics.delete(uriOf(name))
-          state = { failed: message ?? `the runner stopped (exit ${code}), see Output` }
-          if (!message) env.out.appendLine(`Check ${name}:\n${err}`)
-        }
-        states.set(name, state)
-        changed.fire()
-        resolve(state)
-      })
+    const done = runQuietly(uv, env.runner, env.project(), ['check', env.project(), `datasets/${name}.yaml`], (child) => children.set(name, child)).then(({ events, err, code, child }) => {
+      if (children.get(name) !== child) return states.get(name) ?? {} // superseded by a newer run
+      children.delete(name)
+      const items: Item[] | undefined = events.find((e) => e.event === 'checks')?.items
+      const message: string | undefined = events.find((e) => e.event === 'error')?.message
+      let state: State
+      if (items) {
+        place(name, items)
+        state = { errors: items.filter((i) => i.status === 'fail').length, warnings: items.filter((i) => i.status === 'review').length }
+      } else {
+        diagnostics.delete(uriOf(name))
+        state = { failed: message ?? `the runner stopped (exit ${code}), see Output` }
+        if (!message) env.out.appendLine(`Check ${name}:\n${err}`)
+      }
+      states.set(name, state)
+      changed.fire()
+      return state
     })
     if (!asked) return void (await done)
     const title = `Checking the data of ${name}${firstTime ? ' (the first time installs Meridian: a few minutes)' : ''}…`
@@ -159,6 +166,13 @@ export function registerDataChecks(context: vscode.ExtensionContext, env: Env) {
   return {
     /** "Check data": a dataset's checks, on request. */
     check: (name: string) => check(name, true),
+    /** Before a fit: the dataset's errors as the checks find them now (none when the checks cannot run yet). */
+    errors: async (name: string): Promise<string[]> => {
+      if (!ready()) return []
+      await check(name)
+      const uri = uriOf(name)
+      return diagnostics.get(uri)?.filter((d) => d.severity === vscode.DiagnosticSeverity.Error).map((d) => `${d.code}: ${d.message}`) ?? []
+    },
     /** A CSV changed: every dataset's checks again (each reads its own CSV). */
     all
   }

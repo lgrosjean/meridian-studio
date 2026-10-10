@@ -11,7 +11,7 @@ import * as vscode from 'vscode'
 import { parse } from 'yaml'
 import { completeDataset, registerAssist, setRole } from './assist'
 import { profileOf } from './csv'
-import { registerDataChecks } from './datachecks'
+import { registerDataChecks, runQuietly } from './datachecks'
 import { ROLES, complete, isPlaceholder, readDataset, summarize } from './dataset'
 import { openPanels, showReport, showResults } from './results'
 import { RunsView, type RunRow } from './runs'
@@ -229,6 +229,7 @@ class Lenses implements vscode.CodeLensProvider {
     const item = new Item(root, name)
     const running = item.contextValue === 'running'
     const out = [running ? lens('$(debug-stop) Stop', 'meridian.stop') : lens(`$(play) ${KINDS[root].verb}`, 'meridian.run', 'Saves the file, then runs it')]
+    if (root === 'models' && !running) out.push(lens('$(checklist) Check', 'meridian.checkModel', "Meridian's data checks with this model's spec, without sampling: a few seconds"))
     if (item.description) out.push(lens(String(item.description), 'meridian.output', 'Show the runner output'))
     if (fs.existsSync(join(dir, root, `${name}.result.json`))) out.push(lens('$(preview) Show results', 'meridian.results'))
     // Above the line naming its dataset or model: open it (Cmd+click on the name does the same).
@@ -662,6 +663,26 @@ async function run(runner: string, out: vscode.OutputChannel, problems: vscode.D
   child.on('close', (code) => finish(code === 0 || last?.event === 'error' ? undefined : child.killed ? 'Stopped' : `The runner exited with code ${code}`))
 }
 
+/** Meridian's data checks for a model (its EDA, before any sampling), placed as a fit places them; says what they found. */
+async function checkModel(runner: string, out: vscode.OutputChannel, problems: vscode.DiagnosticCollection, name: string) {
+  const uv = await ensureUv(out)
+  await vscode.workspace.saveAll(false)
+  const title = `Meridian's checks on ${name}, without sampling…`
+  const { events, err } = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title }, () =>
+    runQuietly(uv, runner, project(), ['check', project(), `models/${name}.yaml`])
+  )
+  const checks: Check[] | undefined = events.find((e) => e.event === 'checks')?.items
+  if (!checks) {
+    out.appendLine(err)
+    throw new Error(`${name}: ${events.find((e) => e.event === 'error')?.message ?? "Meridian's checks stopped (see Output)"}`)
+  }
+  placeChecks(problems, 'models', name, checks)
+  const n = (status: string) => checks.filter((c) => c.status === status).length
+  const found = [n('fail') && `${n('fail')} error${n('fail') > 1 ? 's' : ''}`, n('review') && `${n('review')} to review`].filter(Boolean).join(', ')
+  const show = await vscode.window.showInformationMessage(`Meridian's checks on ${name}: ${found || 'nothing to review'}${n('info') ? ` (${n('info')} note${n('info') > 1 ? 's' : ''})` : ''}`, 'Show Problems')
+  if (show) vscode.commands.executeCommand('workbench.actions.view.problems')
+}
+
 // One readable line per runner event, for the Output panel.
 function describe(e: Record<string, unknown>): string {
   if (e.event === 'step') return `${e.kind} ${e.name}: ${e.state === 'run' ? 'running' : e.reused ? 'reused' : `${e.rows} rows in ${e.ms} ms`}`
@@ -864,6 +885,21 @@ export function activate(context: vscode.ExtensionContext) {
     assist.recheck()
     data.all()
   }
+  /** Before a fit: the dataset's data errors, which Meridian would refuse; the fit goes on only if asked to. */
+  const dataGate = async (root: Root, name: string): Promise<boolean> => {
+    const dataset = root === 'models' ? parentOf(root, name) : undefined
+    if (!dataset || !fs.existsSync(yamlOf('datasets', dataset))) return true // run() says what is wrong
+    const errors = await data.errors(dataset)
+    if (!errors.length) return true
+    const pick = await vscode.window.showWarningMessage(
+      `${dataset} has ${errors.length} data error${errors.length > 1 ? 's' : ''}: Meridian would refuse the fit of ${name}.`,
+      { modal: true, detail: errors.slice(0, 4).join('\n') + (errors.length > 4 ? '\n…' : '') },
+      'Show Problems',
+      'Fit anyway'
+    )
+    if (pick === 'Show Problems') vscode.commands.executeCommand('workbench.actions.view.problems')
+    return pick === 'Fit anyway'
+  }
   /** The dataset a command acts on: a tree item, a URI (the lens), or the active editor (the palette). */
   const datasetUri = (a?: Item | vscode.Uri) =>
     a instanceof vscode.Uri ? a : a instanceof Item ? vscode.Uri.file(yamlOf('datasets', a.name)) : vscode.window.activeTextEditor?.document.uri
@@ -901,9 +937,13 @@ export function activate(context: vscode.ExtensionContext) {
       await setRole({ project, isDataset }, vscode.Uri.file(yamlOf('datasets', c.dataset)), columns)
     })),
     vscode.commands.registerCommand('meridian.refresh', refresh),
-    vscode.commands.registerCommand('meridian.run', guarded((i: Item) => run(runner, out, problems, i.root, i.name, refresh))),
+    vscode.commands.registerCommand('meridian.run', guarded(async (i: Item) => (await dataGate(i.root, i.name)) && run(runner, out, problems, i.root, i.name, refresh))),
+    vscode.commands.registerCommand('meridian.checkModel', guarded((i: Item) => checkModel(runner, out, problems, i.name))),
     vscode.window.registerWebviewViewProvider('meridian.runs', runsView),
-    vscode.tasks.registerTaskProvider('meridian', makeTasks((root, name, term) => run(runner, out, problems, root, name, refresh, term))),
+    vscode.tasks.registerTaskProvider('meridian', makeTasks(async (root, name, term) => {
+      if (!(await dataGate(root, name))) throw new Error(`Not run: data errors in ${parentOf(root, name)} (see Problems)`)
+      await run(runner, out, problems, root, name, refresh, term)
+    })),
     vscode.commands.registerCommand('meridian.stop', (i: Item) => children.get(`${i.root}/${i.name}`)?.kill()),
     vscode.commands.registerCommand('meridian.rename', guarded(rename)),
     vscode.commands.registerCommand('meridian.delete', guarded(remove)),
