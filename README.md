@@ -135,6 +135,35 @@ coord_to_columns:
 
 Which checks are off is not data: changing them leaves the dataset's fits current.
 
+- **Check**, above a model, runs Meridian's own data checks (multicollinearity, cost per media unit, variability…)
+  with that model's spec, without sampling: what a fit would find in its first seconds, in about fifteen seconds.
+- **▶ Fit runs the dataset's checks first.** On an error Meridian would refuse the data: the fit starts only on
+  **Fit anyway**.
+
+### In CI
+
+`check` runs without VS Code, from a copy of this repository's `runner/`, and the data checks need only pandas and
+pyyaml. It takes the project's folder, then datasets or models (every dataset when none), and exits 1 on an error:
+
+```yaml
+# .github/workflows/data-checks.yml: the findings as annotations on the pull request
+name: data checks
+on: [pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4           # the runner only; pin it with ref: <a commit>
+        with: { repository: lgrosjean/meridian-studio, path: .meridian-studio, sparse-checkout: runner }
+      - uses: astral-sh/setup-uv@v6
+      - run: uv run --no-project --with pandas --with pyyaml python .meridian-studio/runner/runner.py check . --format github
+```
+
+`--format text` prints `datasets/x.yaml:4:9: T001 [error] 1 week missing…` (where the YAML names the column), `json`
+a list, `github` annotations. A model's checks (Meridian's) need the runner's own environment:
+`uv run --project .meridian-studio/runner .meridian-studio/runner/runner.py check . models/<name>.yaml`.
+
 ## Runs, checks and tasks
 
 - **Meridian Runs**, a tab of the bottom panel, lists every fit of every model with its metrics. Click one for its

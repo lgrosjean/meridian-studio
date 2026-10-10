@@ -12,6 +12,7 @@ from typing import Callable, Iterator
 
 import numpy as np
 import pandas as pd
+import yaml
 
 from loader import Fail, frame
 
@@ -264,3 +265,35 @@ def check(project: Path, path: str, emit) -> dict:
     ])
     errors = sum(f.error for f in kept)
     return {"errors": errors, "warnings": len(kept) - errors, "silenced": len(found) - len(kept), "rows": len(df)}
+
+
+def position(text: str, column: str | None) -> tuple[int, int]:
+    """Line and column (from 1) where the YAML first names a column, in a role or as a *_to_channel key; else its csv.
+    Where the editor puts a finding too."""
+    try:
+        root = yaml.compose(text)
+    except yaml.YAMLError:
+        root = None
+    marks, csv = [], None
+    if isinstance(root, yaml.MappingNode):
+        for k, v in root.value:
+            if k.value == "coord_to_columns" and isinstance(v, yaml.MappingNode):
+                for _, rv in v.value:
+                    nodes = rv.value if isinstance(rv, yaml.SequenceNode) else [rv]
+                    marks += [n.start_mark for n in nodes if isinstance(n, yaml.ScalarNode) and n.value == column]
+            elif str(k.value).endswith("_to_channel") and isinstance(v, yaml.MappingNode):
+                marks += [kk.start_mark for kk, _ in v.value if kk.value == column]
+            elif k.value == "csv":
+                csv = v.start_mark
+    m = min(marks, key=lambda x: x.index, default=csv)
+    return (m.line + 1, m.column + 1) if m else (1, 1)
+
+
+def word(text: str, name: str) -> tuple[int, int] | None:
+    """Line and column (from 1) of a name in a YAML, outside comments: where a check of Meridian's about it goes."""
+    pattern = re.compile(rf"(?<![\w.-]){re.escape(name)}(?![\w.-])")
+    for n, line in enumerate(text.splitlines(), 1):
+        m = pattern.search(line.split("#", 1)[0])
+        if m:
+            return n, m.start() + 1
+    return None

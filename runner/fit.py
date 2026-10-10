@@ -97,18 +97,16 @@ def flat(d: dict, prefix: str = "") -> dict:
     return out
 
 
-def fit(project: Path, path: str, emit) -> dict:
+def prepare(project: Path, path: str, emit):
+    """A model's data, Meridian on it and Meridian's data checks (its EDA), before any sampling.
+    Meridian is None when it refuses the data outright; the checks then say why."""
     m = read_model(project, path)
     ds_path = f"datasets/{m['dataset']}.yaml"
     d, df, fingerprint = frame(project, ds_path)
     df = window(df, d["coord_to_columns"].get("time", "time"), m.get("window"))
-    channels = channels_of(d)
 
-    from meridian.analysis import analyzer, summarizer
     from meridian.model import model
-    from meridian.schema.serde import meridian_serde
 
-    t0 = time.time()
     emit(event="phase", name="data", state="run")
     data = input_data(df, d)
     known = names_in(data)
@@ -118,14 +116,14 @@ def fit(project: Path, path: str, emit) -> dict:
         named = [v for v in re.findall(r"'([^']+)'", str(e)) if v in known]
         if not named:
             raise
-        emit(event="checks", items=[{"status": "fail", "title": "Data", "text": str(e), "vars": named}])
-        raise Fail(f"Meridian refuses the data: {', '.join(named)} (see Problems)")
+        return m, ds_path, d, df, fingerprint, None, [{"status": "fail", "code": "DATA", "title": "Data", "text": str(e), "vars": named}]
     emit(event="phase", name="data", state="done")
 
     eda = mmm.eda_outcomes
     items = [
         {
             "status": f.severity.name.lower(),
+            "code": o.check_type.name,
             "title": o.check_type.name.replace("_", " ").capitalize(),
             "text": f.explanation,
             "vars": variables_of(f, known),
@@ -133,9 +131,31 @@ def fit(project: Path, path: str, emit) -> dict:
         for o in (getattr(eda, x.name) for x in dataclasses.fields(eda))
         for f in o.findings
     ]
+    return m, ds_path, d, df, fingerprint, mmm, items
+
+
+def eda(project: Path, path: str, emit) -> dict:
+    """Meridian's data checks for a model, what a fit would find before sampling: in seconds, without fitting."""
+    *_, mmm, items = prepare(project, path, emit)
     emit(event="checks", items=items)
+    count = lambda status: sum(i["status"] == status for i in items)  # noqa: E731
+    return {"errors": count("fail"), "warnings": count("review"), "infos": count("info")}
+
+
+def fit(project: Path, path: str, emit) -> dict:
+    from meridian.model import model  # noqa: F401  imported before the clock starts, as before: fit time is Meridian's own
+
+    t0 = time.time()
+    m, ds_path, d, df, fingerprint, mmm, items = prepare(project, path, emit)
+    emit(event="checks", items=items)
+    if mmm is None:
+        raise Fail(f"Meridian refuses the data: {', '.join(items[0]['vars'])} (see Problems)")
     if any(i["status"] == "fail" for i in items):
         raise Fail("Meridian's data checks failed (see Problems)")
+    channels = channels_of(d)
+
+    from meridian.analysis import analyzer, summarizer
+    from meridian.schema.serde import meridian_serde
 
     s = dict(m.get("sampling") or {})
     n_prior = s.pop("n_prior", 500)

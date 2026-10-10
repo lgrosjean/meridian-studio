@@ -25,6 +25,12 @@ def run(*args) -> tuple[int, list[dict]]:
     return p.returncode, events
 
 
+def raw(*args) -> tuple[int, str]:
+    """The runner as a person or a CI job runs it: its exit code and what it prints."""
+    p = subprocess.run([sys.executable, str(HERE / "runner.py"), *args], capture_output=True, text=True)
+    return p.returncode, p.stdout
+
+
 def found(events) -> list[tuple[str, str, str]]:
     """The data checks' findings: (code, column, fail | review)."""
     return sorted((i["code"], i["vars"][0], i["status"]) for e in events if e["event"] == "checks" for i in e["items"])
@@ -71,13 +77,31 @@ def data_checks(project: Path):
     )
     (project / "datasets/broken.yaml").write_text(yaml)
     code, ev = run("check", str(project), "datasets/broken.yaml")
-    assert code == 0 and found(ev) == [
+    assert code == 1 and found(ev) == [
         ("C001", "covid", "fail"), ("K001", "sales", "fail"), ("K002", "sales", "fail"), ("M001", "tv_imps", "review"), ("M001", "tv_spend", "fail"),
         ("M002", "print_spend", "fail"), ("M002", "radio_spend", "review"), ("M003", "search_spend", "review"), ("S001", "radio_spend", "review"),
         ("T001", "week", "fail"), ("T002", "week", "fail"),
     ], found(ev)
     assert "2024-03-11" in next(i["text"] for i in ev[0]["items"] if i["code"] == "T001")  # it says which week
     assert ev[-1]["summary"] == {"errors": 7, "warnings": 4, "silenced": 0, "rows": 29}, ev[-1]
+
+    # For people and CI: where each finding is (the line naming its column), in text, GitHub annotations or JSON.
+    cwd = os.getcwd()
+    os.chdir(project)
+    try:
+        code, out = raw("check", ".", "--format", "text")  # every dataset: broken, and the example
+        lines = out.splitlines()
+        assert code == 1 and "datasets/broken.yaml:4:9: T001 [error] 1 week missing from week: 2024-03-11." in out, out
+        assert "datasets/broken.yaml:8:27: M002 [warning] radio_spend is active 2 weeks out of 29 (7%)" in out and lines[-1] == "Found 7 errors and 4 warnings in 2 files.", out
+        code, out = raw("check", ".", "datasets/broken.yaml", "--format", "github")
+        assert out.startswith("::error file=datasets/broken.yaml,line=4,col=9,title=T001::1 week missing") and "(7%25)" in out, out
+        code, out = raw("check", ".", "datasets/broken.yaml", "--format", "json")
+        rows = json.loads(out)
+        assert code == 1 and {"file": "datasets/broken.yaml", "line": 6, "column": 21, "code": "C001", "severity": "error"}.items() <= next(r for r in rows if r["code"] == "C001").items(), rows
+        code, out = raw("check", ".", "datasets/synthetic.yaml", "--format", "text")
+        assert code == 0 and out == "All checks passed (1 file).\n", out
+    finally:
+        os.chdir(cwd)
 
     # Off: for the dataset (any case), for a column, on a line; a threshold moved.
     (project / "datasets/broken.yaml").write_text(
@@ -97,7 +121,7 @@ def data_checks(project: Path):
         "media_to_channel: { tv_imps: tv }\nmedia_spend_to_channel: { tv_spend: tv }\n"
     )
     code, ev = run("check", str(project), "datasets/geo.yaml")
-    assert found(ev) == [("T003", "week", "fail")] and "a adds 2024-01-22" in ev[0]["items"][0]["text"], ev
+    assert code == 1 and found(ev) == [("T003", "week", "fail")] and "a adds 2024-01-22" in ev[0]["items"][0]["text"], ev
     for f in ("datasets/broken.yaml", "datasets/geo.yaml"):
         (project / f).unlink()
 
@@ -130,6 +154,11 @@ def main():
             "  sigma: { dist: HalfNormal, scale: 3 }\n"
             "sampling: { n_prior: 50, n_chains: [1], n_adapt: 50, n_burnin: 0, n_keep: 50, seed: 1 }\n"
         )
+        # Meridian's own data checks on a model, without sampling: what a fit would find before it starts.
+        code, ev = run("check", str(project), "models/tiny.yaml")
+        assert code == 0 and set(ev[-1]["summary"]) == {"errors", "warnings", "infos"}, ev
+        items = next(e["items"] for e in ev if e["event"] == "checks")
+        assert items and all(i["code"].isupper() and i["status"] in ("fail", "review", "info") for i in items), items
         # A prior Meridian cannot take fails readably, before any sampling.
         good = (project / "models/tiny.yaml").read_text()
         (project / "models/tiny.yaml").write_text(good.replace("ch1: { mean: 2, sd: 1 }", "ch9: { mean: 2, sd: 1 }"))
