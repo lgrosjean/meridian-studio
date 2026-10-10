@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Datasets from their CSV.** New dataset fills the YAML from the CSV: dates → `time`, the column repeating them →
+  `geo`, impressions paired with spend by name into channels, KPI, revenue per KPI and controls by name.
+  **Complete from \<csv\>** above a dataset does it again; what it cannot place stays unused.
+- Completion of the CSV's columns where a dataset names them, each with what it holds (dates, numbers and their
+  range, zeros, empty cells), and of channels; a hover on a column.
+- A dataset's mistakes underlined as you type, with quick fixes: a column the CSV lacks, dates not yyyy-mm-dd, text
+  where numbers go, a column in two roles, unmapped columns, a channel without spend, `media_spend` in another
+  channel order than `media`, dates that repeat without `geo`, `revenue_per_kpi` with `kpi_type: revenue`.
+- The tree sets a column's role (right-click, several at once), and refreshes when a CSV changes. Rename and delete
+  no longer show on a dataset's columns, a model's runs or its priors.
 - **Priors cover all of Meridian's PriorDistribution** (36 fields: ROI, mROI, contribution, adstock, Hill, controls,
   noise…), each one TensorFlow Probability distribution, once for all channels or per channel with a default.
   The keys `roi` and `adstock` are now `roi_m` and `alpha_m` with a `dist`; the fit says how to convert.

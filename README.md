@@ -15,7 +15,8 @@ in MLflow.
 ## Getting started
 
 1. Open a folder. Click the Meridian icon in the activity bar, then **New dataset** and pick your weekly CSV.
-   The YAML opens with the CSV's header in a comment: map its columns to Meridian's roles.
+   The YAML opens filled from the CSV as far as its content and column names allow; what is left, complete it in
+   the YAML (the CSV's columns are offered where they go) or set roles from the tree.
 2. **New model** on that dataset: `ModelSpec`, priors, sampling. Click **▶ Fit** above the file.
 3. **New scenario** on that model: a budget, bounds per channel. Click **▶ Optimize**.
 
@@ -32,7 +33,8 @@ Fits run on your machine, on CPU.
 | Scenarios | `scenarios/` | the model, a budget, bounds per channel, or an ROI target      | Meridian's `BudgetOptimizer` on that fit |
 
 - **Completion and errors while you type**, from a JSON schema per kind (through the YAML extension, installed
-  with this one). Columns named in a dataset but absent from its CSV show in red in the tree.
+  with this one), and for a dataset from its CSV (below). Columns named in a dataset but absent from its CSV show
+  in red in the tree.
 - **The tree explains each file**: a dataset unfolds into its CSV columns and their roles, unused ones greyed;
   a model into its priors per channel and its runs.
 - **Results beside the editor** after each run: R², MAPE, r-hat, divergences, ROI by channel with its interval;
@@ -78,6 +80,25 @@ priors:
   ec_m: { dist: TruncatedNormal, loc: 0.8, scale: 0.8, low: 0.1, high: 10 }
   sigma: { dist: HalfNormal, scale: 3 }
 ```
+
+## Datasets, from their CSV
+
+- **New dataset fills the YAML from the CSV**: the column of dates becomes `time`, the column repeating them `geo`;
+  a channel's impressions pair with its spend by name (`tv_imps` and `tv_spend` make channel `tv`; reach, frequency
+  and spend likewise); the KPI, revenue per KPI and controls come by name. A column it cannot place stays unused,
+  greyed in the tree. **Complete from \<csv\>**, above the file, does it again, after the CSV gains columns say.
+- **The CSV's columns complete where they go**: under `coord_to_columns`, the columns no role holds yet, likeliest
+  first (dates for `time`, numbers named like spend for `media_spend`…), each with what it holds
+  (`numbers · 32.5K – 338K · 3 zeros`); in a `*_to_channel` map, the role's columns not mapped yet, all at once if
+  you like, with their channel. A hover on a column says what it holds and which role has it.
+- **Mistakes are underlined as you type, each with its fix** (Cmd+.): a column the CSV lacks (and the one it likely
+  meant), dates not written yyyy-mm-dd, text where numbers go, a column in two roles, a media column without a
+  channel, a channel with impressions but no spend, `media_spend` listing its channels in another order than
+  `media` (Meridian pairs them by position), dates that repeat without a geo column, a `revenue_per_kpi` that
+  `kpi_type: revenue` ignores.
+- **Right-click a column in the tree to set its role**, several at once with Cmd+click; a channel's column asks for
+  its channel (`tv_spend` offers `tv` when `tv_imps` is `tv`). The YAML is rewritten in place, its layout and
+  comments kept.
 
 ## Runs, checks and tasks
 

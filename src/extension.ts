@@ -9,6 +9,9 @@ import { homedir } from 'node:os'
 import { basename, delimiter, dirname, isAbsolute, join, relative } from 'node:path'
 import * as vscode from 'vscode'
 import { parse } from 'yaml'
+import { completeDataset, registerAssist, setRole } from './assist'
+import { profileOf } from './csv'
+import { ROLES, complete, isPlaceholder, readDataset, summarize } from './dataset'
 import { openPanels, showReport, showResults } from './results'
 import { RunsView, type RunRow } from './runs'
 
@@ -286,56 +289,39 @@ function summaryLine(root: Root, r: RunRecord): string {
 
 // A dataset unfolds into its CSV's columns, each with the role its YAML gives it. Unused ones are greyed
 // (through a file decoration: the only way to colour a tree label); columns named but absent come last, in red.
-const ROLES: [string, string, string][] = [
-  // coord_to_columns key, what the tree says, icon
-  ['time', 'time', 'calendar'], ['geo', 'geo', 'globe'], ['kpi', 'KPI', 'target'], ['revenue_per_kpi', 'revenue per KPI', 'tag'],
-  ['population', 'population', 'person'], ['media', 'media', 'broadcast'], ['media_spend', 'spend', 'credit-card'],
-  ['reach', 'reach', 'broadcast'], ['frequency', 'frequency', 'broadcast'], ['rf_spend', 'spend', 'credit-card'],
-  ['controls', 'control', 'settings'], ['non_media_treatments', 'non-media', 'symbol-event'],
-  ['organic_media', 'organic', 'symbol-event'], ['organic_reach', 'organic reach', 'symbol-event'], ['organic_frequency', 'organic frequency', 'symbol-event']
-]
+// Right-click (or the inline button) sets a column's role: the YAML is rewritten, the tree follows.
 const UNUSED = 'meridian-column'
 class Column extends vscode.TreeItem {
-  constructor(column: string, role: string | undefined, icon: string, channel: string | undefined, absent = false) {
+  constructor(
+    public dataset: string,
+    public column: string,
+    role: string | undefined,
+    icon: string,
+    channel: string | undefined,
+    absent = false
+  ) {
     super(column)
     this.description = absent ? `${role}: not in the CSV` : role ? [role, channel].filter(Boolean).join(' · ') : ''
     this.iconPath = new vscode.ThemeIcon(absent ? 'error' : icon, absent ? new vscode.ThemeColor('list.errorForeground') : undefined)
+    this.contextValue = absent ? 'column-absent' : role ? 'column' : 'column-unused'
     if (!role) this.resourceUri = vscode.Uri.from({ scheme: UNUSED, path: `/${column}` })
   }
 }
 function columnsOf(name: string): Column[] {
   const csv = csvOf(name)
-  if (!csv || !fs.existsSync(csv)) return []
-  let d: Record<string, any> = {}
-  try {
-    d = parse(fs.readFileSync(yamlOf('datasets', name), 'utf8')) ?? {}
-  } catch {
-    // a YAML being typed: every column shows as unused until it parses
-  }
+  const header = csv ? profileOf(csv)?.header : undefined
+  if (!header) return []
+  const ds = readDataset(fs.readFileSync(yamlOf('datasets', name), 'utf8'))
   const roles = new Map<string, [string, string, string | undefined]>()
-  for (const [key, label, icon] of ROLES) {
-    const v = d.coord_to_columns?.[key]
-    const channels = d[`${key}_to_channel`] ?? {}
-    for (const c of typeof v === 'string' ? [v] : Array.isArray(v) ? v : []) roles.set(String(c), [label, icon, channels[c]])
+  for (const r of ROLES) {
+    const channels = new Map((r.map ? (ds.maps[r.map] ?? []) : []).map((e) => [e.column.value, e.channel?.value]))
+    for (const n of ds.roles[r.key] ?? []) if (!isPlaceholder(n.value)) roles.set(n.value, [r.label, r.icon, channels.get(n.value)])
   }
-  const header = headerOf(csv)
   const absent = [...roles].filter(([c]) => !header.includes(c))
   return [
-    ...header.map((c) => (roles.has(c) ? new Column(c, ...roles.get(c)!) : new Column(c, undefined, 'circle-slash', undefined))),
-    ...absent.map(([c, [role, icon]]) => new Column(c, role, icon, undefined, true))
+    ...header.map((c) => (roles.has(c) ? new Column(name, c, ...roles.get(c)!) : new Column(name, c, undefined, 'circle-slash', undefined))),
+    ...absent.map(([c, [role, icon]]) => new Column(name, c, role, icon, undefined, true))
   ]
-}
-/** The CSV's column names, from its first line only. */
-function headerOf(path: string): string[] {
-  const fd = fs.openSync(path, 'r')
-  try {
-    const buf = Buffer.alloc(64 * 1024)
-    const n = fs.readSync(fd, buf, 0, buf.length, 0)
-    const line = buf.toString('utf8', 0, n).split(/\r?\n/)[0].replace(/^\uFEFF/, '')
-    return line.split(',').map((c) => c.trim().replace(/^"|"$/g, ''))
-  } finally {
-    fs.closeSync(fd)
-  }
 }
 
 // A model unfolds into its dataset's channels, each with the priors the YAML gives it (or Meridian's
@@ -681,6 +667,7 @@ function describe(e: Record<string, unknown>): string {
 async function create(templates: string, root: Root): Promise<void> {
   const kind = KINDS[root]
   const values: Record<string, string> = {}
+  let profile: ReturnType<typeof profileOf>
   if (kind.parent) {
     const parents = new Tree(kind.parent).list().map((i) => i.name)
     if (!parents.length) throw new Error(`Create a ${KINDS[kind.parent].one} first`)
@@ -695,9 +682,11 @@ async function create(templates: string, root: Root): Promise<void> {
     const rel = relative(project(), csv.fsPath)
     // Inside the project: relative, so the project moves with its data. Elsewhere: absolute, as picked.
     values.csv = rel.startsWith('..') || isAbsolute(rel) ? csv.fsPath : rel.split('\\').join('/')
-    const header = headerOf(csv.fsPath)
+    profile = profileOf(csv.fsPath)
+    const header = profile?.header ?? []
     values.columns = header.join(', ')
-    values.time = header.find((c) => /date|time|week|period/i.test(c)) ?? header[0] ?? 'time'
+    // The time column: the one holding dates, else the one named like it.
+    values.time = header.find((c) => profile?.columns.get(c)?.type === 'dates') ?? header.find((c) => /date|time|week|period/i.test(c)) ?? header[0] ?? 'time'
   }
   const name = await vscode.window.showInputBox({
     prompt: `Name of the ${kind.one} (its file name in ${root}/)`,
@@ -705,10 +694,14 @@ async function create(templates: string, root: Root): Promise<void> {
   })
   if (!name) return
   values.name = name
-  const text = fs.readFileSync(join(templates, `${kind.one}.yaml`), 'utf8').replace(/\{\{(\w+)\}\}/g, (_, k) => values[k] ?? '')
+  let text = fs.readFileSync(join(templates, `${kind.one}.yaml`), 'utf8').replace(/\{\{(\w+)\}\}/g, (_, k) => values[k] ?? '')
+  // A new dataset starts filled from its CSV, as far as the CSV's content and names allow; the rest is left blank.
+  const filled = profile && complete(text, profile)
+  if (filled) text = filled.text
   fs.mkdirSync(join(project(), root), { recursive: true })
   fs.writeFileSync(yamlOf(root, name), text)
   await vscode.window.showTextDocument(vscode.Uri.file(yamlOf(root, name)))
+  if (filled && profile) vscode.window.showInformationMessage(summarize(filled, profile.file))
 }
 
 // --- Rename and delete ------------------------------------------------------------------------
@@ -842,7 +835,18 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.window.showErrorMessage(e instanceof Error ? e.message : String(e))
     }
   }
+  const isDataset = (uri: vscode.Uri) => studioFile(uri)?.root === 'datasets'
+  const assist = registerAssist(context, { project, isDataset })
   const watcher = vscode.workspace.createFileSystemWatcher('**/{datasets,models,scenarios}/*.{yaml,json,jsonl}')
+  // A CSV edited or replaced: the datasets' columns, their checks and their lenses follow.
+  const csvs = vscode.workspace.createFileSystemWatcher('**/*.csv')
+  const csvChanged = () => {
+    trees.datasets.refresh()
+    assist.recheck()
+  }
+  /** The dataset a command acts on: a tree item, a URI (the lens), or the active editor (the palette). */
+  const datasetUri = (a?: Item | vscode.Uri) =>
+    a instanceof vscode.Uri ? a : a instanceof Item ? vscode.Uri.file(yamlOf('datasets', a.name)) : vscode.window.activeTextEditor?.document.uri
   context.subscriptions.push(
     out,
     problems,
@@ -853,7 +857,23 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.registerFileDecorationProvider({
       provideFileDecoration: (uri) => (uri.scheme === UNUSED ? { color: new vscode.ThemeColor('disabledForeground'), tooltip: 'Not used by the model' } : undefined)
     }),
-    ...ROOTS.map((r) => vscode.window.registerTreeDataProvider(`meridian.${r}`, trees[r])),
+    csvs,
+    csvs.onDidCreate(csvChanged),
+    csvs.onDidChange(csvChanged),
+    csvs.onDidDelete(csvChanged),
+    // Datasets: several columns can be picked at once, to give them one role.
+    vscode.window.createTreeView('meridian.datasets', { treeDataProvider: trees.datasets, canSelectMany: true }),
+    ...ROOTS.filter((r) => r !== 'datasets').map((r) => vscode.window.registerTreeDataProvider(`meridian.${r}`, trees[r])),
+    vscode.commands.registerCommand('meridian.complete', guarded(async (a?: Item | vscode.Uri) => {
+      const uri = datasetUri(a)
+      if (!uri || !isDataset(uri)) throw new Error('Open a dataset (datasets/<name>.yaml) first')
+      await completeDataset({ project, isDataset }, uri)
+    })),
+    vscode.commands.registerCommand('meridian.setRole', guarded(async (c: Column, picked?: Column[]) => {
+      // the columns picked together when the one clicked is among them, of its dataset; else the one clicked
+      const columns = (picked?.includes(c) ? picked : [c]).filter((p) => p instanceof Column && p.dataset === c.dataset).map((p) => p.column)
+      await setRole({ project, isDataset }, vscode.Uri.file(yamlOf('datasets', c.dataset)), columns)
+    })),
     vscode.commands.registerCommand('meridian.refresh', refresh),
     vscode.commands.registerCommand('meridian.run', guarded((i: Item) => run(runner, out, problems, i.root, i.name, refresh))),
     vscode.window.registerWebviewViewProvider('meridian.runs', runsView),
@@ -876,4 +896,6 @@ export function activate(context: vscode.ExtensionContext) {
 
 export function deactivate() {}
 export const _setStorage = (dir: string) => (storage = dir)
+export * as _dataset from './dataset' // for scripts/check-columns.js, like the ones below
+export * as _csv from './csv'
 export { wordRange as _wordRange, referenceIn as _referenceIn, fingerprintOf as _fingerprintOf, ensureUv as _ensureUv, columnsOf as _columnsOf, priorsOf as _priorsOf, modelChildren as _modelChildren, folderChildren as _folderChildren } // for scripts/check-columns.js
