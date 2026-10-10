@@ -11,6 +11,7 @@ import * as vscode from 'vscode'
 import { parse } from 'yaml'
 import { completeDataset, registerAssist, setRole } from './assist'
 import { profileOf } from './csv'
+import { registerDataChecks } from './datachecks'
 import { ROLES, complete, isPlaceholder, readDataset, summarize } from './dataset'
 import { openPanels, showReport, showResults } from './results'
 import { RunsView, type RunRow } from './runs'
@@ -58,11 +59,20 @@ const csvOf = (name: string): string | undefined => {
   return csv ? (isAbsolute(csv) ? csv : join(project(), csv)) : undefined
 }
 
+/** A YAML less its top-level `checks:` block (and the indented lines under it): which data checks are off is not data. */
+const withoutChecks = (text: string) => {
+  const lines = text.split('\n')
+  const at = lines.findIndex((l) => /^checks:/.test(l))
+  if (at < 0) return text
+  let end = at + 1
+  for (let i = at + 1; i < lines.length && !/^\S/.test(lines[i]); i++) if (lines[i].trim()) end = i + 1 // up to its last indented line
+  return [...lines.slice(0, at), ...lines.slice(end)].join('\n')
+}
 /** What a run depends on: its YAML, and for a model or a scenario what its parent last produced. */
 function fingerprintOf(root: Root, name: string): string {
   const { parent, key } = KINDS[root]
   // Its own name and its parent's name are not content: a rename leaves the runs current.
-  const text = fs.readFileSync(yamlOf(root, name), 'utf8').replace(new RegExp(`^(name${key ? `|${key}` : ''}):.*$`, 'gm'), '')
+  const text = withoutChecks(fs.readFileSync(yamlOf(root, name), 'utf8')).replace(new RegExp(`^(name${key ? `|${key}` : ''}):.*$`, 'gm'), '')
   if (!parent) {
     const csv = csvOf(name)
     return sha(`${text}\n${csv && fs.existsSync(csv) ? sha(fs.readFileSync(csv).toString('latin1')) : 'no csv'}`)
@@ -837,12 +847,22 @@ export function activate(context: vscode.ExtensionContext) {
   }
   const isDataset = (uri: vscode.Uri) => studioFile(uri)?.root === 'datasets'
   const assist = registerAssist(context, { project, isDataset })
+  const data = registerDataChecks(context, {
+    project,
+    runner,
+    findUv,
+    ensureUv: () => ensureUv(out),
+    out,
+    datasets: () => new Tree('datasets').list().map((i) => i.name),
+    isDataset
+  })
   const watcher = vscode.workspace.createFileSystemWatcher('**/{datasets,models,scenarios}/*.{yaml,json,jsonl}')
   // A CSV edited or replaced: the datasets' columns, their checks and their lenses follow.
   const csvs = vscode.workspace.createFileSystemWatcher('**/*.csv')
   const csvChanged = () => {
     trees.datasets.refresh()
     assist.recheck()
+    data.all()
   }
   /** The dataset a command acts on: a tree item, a URI (the lens), or the active editor (the palette). */
   const datasetUri = (a?: Item | vscode.Uri) =>
@@ -868,6 +888,12 @@ export function activate(context: vscode.ExtensionContext) {
       const uri = datasetUri(a)
       if (!uri || !isDataset(uri)) throw new Error('Open a dataset (datasets/<name>.yaml) first')
       await completeDataset({ project, isDataset }, uri)
+    })),
+    vscode.commands.registerCommand('meridian.checkData', guarded(async (a?: Item | vscode.Uri) => {
+      const uri = datasetUri(a)
+      if (!uri || !isDataset(uri)) throw new Error('Open a dataset (datasets/<name>.yaml) first')
+      await vscode.workspace.saveAll(false)
+      await data.check(basename(uri.fsPath, '.yaml'))
     })),
     vscode.commands.registerCommand('meridian.setRole', guarded(async (c: Column, picked?: Column[]) => {
       // the columns picked together when the one clicked is among them, of its dataset; else the one clicked
@@ -898,4 +924,4 @@ export function deactivate() {}
 export const _setStorage = (dir: string) => (storage = dir)
 export * as _dataset from './dataset' // for scripts/check-columns.js, like the ones below
 export * as _csv from './csv'
-export { wordRange as _wordRange, referenceIn as _referenceIn, fingerprintOf as _fingerprintOf, ensureUv as _ensureUv, columnsOf as _columnsOf, priorsOf as _priorsOf, modelChildren as _modelChildren, folderChildren as _folderChildren } // for scripts/check-columns.js
+export { wordRange as _wordRange, referenceIn as _referenceIn, fingerprintOf as _fingerprintOf, withoutChecks as _withoutChecks, ensureUv as _ensureUv, columnsOf as _columnsOf, priorsOf as _priorsOf, modelChildren as _modelChildren, folderChildren as _folderChildren } // for scripts/check-columns.js

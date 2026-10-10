@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Data checks**, like a linter's: each CSV checked by the role of its columns, each finding with a code, in
+  Problems on the line naming its column and counted above the file. T001–T003 the dates (weeks missing, off the
+  step, different per geo), K001–K002 the KPI (empty after it starts, negative), M001–M003 the channels (negative,
+  rarely active or never spending, zero over the last weeks), S001 a channel's tiny share of spend, C001 a control
+  that never varies. Run on save and on opening once Meridian is installed, or by **Check data**. Turned off in the
+  YAML (`checks: ignore`, per column, `# noqa: CODE`), thresholds there too; the runner's `check` command does it.
 - **Datasets from their CSV.** New dataset fills the YAML from the CSV: dates → `time`, the column repeating them →
   `geo`, impressions paired with spend by name into channels, KPI, revenue per KPI and controls by name.
   **Complete from \<csv\>** above a dataset does it again; what it cannot place stays unused.

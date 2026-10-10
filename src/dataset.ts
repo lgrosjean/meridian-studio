@@ -45,6 +45,7 @@ export type Dataset = {
   roles: Record<string, Named[]> // coord_to_columns: role → its columns as written
   roleKeys: Record<string, Named>
   maps: Record<string, Entry[]> // media_to_channel… → its entries
+  checked: Named[] // checks.columns: the columns some data checks are off for
 }
 
 // The template's blanks: `<column>`, `[<impressions column>, ...]`, an empty item.
@@ -63,7 +64,7 @@ const coordPair = (doc: { contents: unknown }, key: string): AnyPair | undefined
 }
 
 export function readDataset(text: string): Dataset {
-  const ds: Dataset = { roles: {}, roleKeys: {}, maps: {} }
+  const ds: Dataset = { roles: {}, roleKeys: {}, maps: {}, checked: [] }
   for (const p of pairs(parseDocument(text))) {
     const k = keyOf(p)
     if (k === 'csv') ds.csv = named(p.value)
@@ -80,6 +81,9 @@ export function readDataset(text: string): Dataset {
           ds.roles[key] = items.flatMap((i) => (isScalar(i) && i.range ? [named(i) ?? { value: '', start: i.range[0], end: i.range[1] }] : []))
           if (!isSeq(r.value)) ds.roles[key] = ds.roles[key].filter((n) => n.value !== '')
         }
+    } else if (k === 'checks') {
+      const columns = isMap(p.value) ? (p.value.items as AnyPair[]).find((q) => keyOf(q) === 'columns')?.value : undefined
+      if (isMap(columns)) ds.checked = (columns.items as AnyPair[]).flatMap((q) => named(q.key) ?? [])
     } else if (k.endsWith('_to_channel'))
       ds.maps[k] = isMap(p.value)
         ? (p.value.items as AnyPair[]).flatMap((e) => {
@@ -98,6 +102,14 @@ export function usage(ds: Dataset): Map<string, string[]> {
   for (const [key, nodes] of Object.entries(ds.roles)) for (const n of nodes) if (!isPlaceholder(n.value)) add(n.value, key)
   for (const r of ROLES) if (r.map) for (const e of ds.maps[r.map] ?? []) if (!isPlaceholder(e.column.value)) add(e.column.value, r.key)
   return out
+}
+
+/** Where the YAML first names a column (in a role or as a *_to_channel key), else its csv line: where a data check goes. */
+export function mention(text: string, column?: string): { start: number; end: number } {
+  const ds = readDataset(text)
+  const named = [...Object.values(ds.roles).flat(), ...Object.values(ds.maps).flat().map((e) => e.column)]
+  const first = named.filter((n) => n.value === column).sort((a, b) => a.start - b.start)[0]
+  return first ?? ds.csv ?? { start: 0, end: 0 }
 }
 
 // --- Names: what a column's name says it is, and the channel it belongs to ------------------------------------
@@ -619,6 +631,9 @@ export function check(text: string, csv: Profile | undefined): Problem[] {
     return real(key).some((n) => n.value === column)
   }
 
+  for (const n of ds.checked)
+    if (!uses.has(n.value)) flag(n, 'warning', `${n.value} is not a column of this dataset: no check runs on it`, ...(csv ? [closest(n.value, [...uses.keys()])] : []).filter((c): c is string => !!c).map((c) => ({ title: `Replace with ${c}`, edit: (t: string) => splice(t, n.start, n.end, yamlName(c)), preferred: true })))
+
   if (ds.coord && !['media', 'media_spend', 'reach', 'frequency', 'rf_spend'].some((k) => (ds.roles[k] ?? []).length))
     flag(ds.coord, 'error', 'Meridian needs paid media: media and media_spend, or reach, frequency and rf_spend', fill)
   const rpk = real('revenue_per_kpi')[0]
@@ -629,7 +644,7 @@ export function check(text: string, csv: Profile | undefined): Problem[] {
 
 // --- Where the cursor is, what to complete there, what a hover says -----------------------------------------
 
-export type Where = ({ what: 'csv' } | { what: 'role'; role: Role } | { what: 'key'; role: Role } | { what: 'channel'; role: Role; column: string }) & {
+export type Where = ({ what: 'csv' } | { what: 'checked' } | { what: 'role'; role: Role } | { what: 'key'; role: Role } | { what: 'channel'; role: Role; column: string }) & {
   start: number // the value being typed, which a completion replaces
   end: number
   quoted: boolean
@@ -656,6 +671,8 @@ export function where(text: string, offset: number): Where | undefined {
   const at = { start, end, quoted, flow }
   const value = hit.key === 'value' || typeof hit.key === 'number'
   if (keys.length === 1 && keys[0] === 'csv' && value) return { what: 'csv', ...at }
+  // a column under checks.columns: its key (or the first one, typed under an empty `columns:`)
+  if (keys[0] === 'checks' && keys[1] === 'columns' && ((keys.length === 3 && hit.key === 'key') || (keys.length === 2 && value))) return { what: 'checked', ...at }
   if (keys.length === 2 && keys[0] === 'coord_to_columns' && value) {
     const r = role(keys[1])
     return r && { what: 'role', role: r, ...at }
@@ -686,6 +703,10 @@ export function suggest(text: string, offset: number, csv: Profile | undefined):
   const own = text.slice(w.start, w.end)
   const name = (c: string) => (w.quoted ? c : yamlName(c))
   const span = { start: w.start, end: w.end }
+  if (w.what === 'checked') {
+    const done = new Set(ds.checked.map((n) => n.value))
+    return [...uses.keys()].filter((c) => !done.has(c)).map((c, i) => ({ label: c, detail: uses.get(c)!.join(', '), insert: w.quoted ? c : `${yamlName(c)}: { ignore: [\${1}] }`, snippet: !w.quoted, sort: pad(i), kind: 'column', ...span }))
+  }
   const r = w.role
   const columns = () => {
     const mine = new Set((ds.roles[r.key] ?? []).map((n) => n.value))

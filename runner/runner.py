@@ -1,4 +1,4 @@
-"""Studio runner: fit | optimize. One JSON object per line on stdout; the extension reads them."""
+"""Studio runner: fit | optimize | check. One JSON object per line on stdout; the extension reads them."""
 import argparse
 import json
 import os
@@ -24,9 +24,9 @@ def emit(**event):
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="runner.py")
-    p.add_argument("command", choices=["fit", "optimize"])
+    p.add_argument("command", choices=["fit", "optimize", "check"])
     p.add_argument("project", type=Path)
-    p.add_argument("path", help="models/<n>.yaml or scenarios/<n>.yaml, relative to the project")
+    p.add_argument("path", help="models/<n>.yaml, scenarios/<n>.yaml or (check) datasets/<n>.yaml, relative to the project")
     a = p.parse_args(argv)
     try:
         if a.command == "fit":
@@ -37,6 +37,10 @@ def main(argv=None) -> int:
             import optimize
 
             emit(event="done", summary=optimize.optimize(a.project, a.path, emit))
+        elif a.command == "check":
+            import checks
+
+            emit(event="done", summary=checks.check(a.project, a.path, emit))
         return 0
     except Fail as e:
         emit(event="error", message=str(e))

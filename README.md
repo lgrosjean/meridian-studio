@@ -100,6 +100,41 @@ priors:
   its channel (`tv_spend` offers `tv` when `tv_imps` is `tv`). The YAML is rewritten in place, its layout and
   comments kept.
 
+## Data checks
+
+A dataset's CSV is checked by the role of each column, like code by a linter: each finding has a code, sits in
+Problems on the line naming its column, and is counted above the file. The checks run when a dataset or a CSV is
+saved and when the window opens, once Meridian's environment is installed (by a first fit, or by **Check data**,
+above the file or on the dataset in the tree). Errors are what Meridian would refuse; warnings, what it would take
+but estimate badly.
+
+| Code | Columns                         | Finds                                                  |                                                  |
+|------|---------------------------------|--------------------------------------------------------|--------------------------------------------------|
+| T001 | time                            | weeks missing between the dates                        | error: Meridian wants them regularly spaced      |
+| T002 | time                            | a date off the weekly step                             | error, likewise                                  |
+| T003 | time                            | geos with different dates                              | error                                            |
+| K001 | kpi                             | empty cells after the KPI's first value                | error: Meridian takes them only before it starts |
+| K002 | kpi, revenue_per_kpi            | negative values                                        | error                                            |
+| M001 | media, spend, reach, frequency  | negative values                                        | error; a warning for impressions                 |
+| M002 | spend, organic media            | a channel active in few weeks (under 10%)              | warning; an error for a paid one never spending  |
+| M003 | spend, organic media            | zero over the last 4 weeks, after activity             | warning: data not loaded yet?                    |
+| S001 | spend                           | a channel under 1% of all spend                        | warning: its ROI will be very uncertain          |
+| C001 | controls, treatments, organic   | a column that never varies over time                   | error                                            |
+
+They are turned off as code, in the dataset's YAML, where completion lists them:
+
+```yaml
+checks:
+  ignore: [S001]                       # for the whole dataset
+  thresholds: { min_active_share: 0.1, trailing_weeks: 4, min_spend_share: 0.01 }
+  columns:
+    search_spend: { ignore: [M003] }   # for one column
+coord_to_columns:
+  controls: [price, covid]   # noqa: C001   (on a line naming a column)
+```
+
+Which checks are off is not data: changing them leaves the dataset's fits current.
+
 ## Runs, checks and tasks
 
 - **Meridian Runs**, a tab of the bottom panel, lists every fit of every model with its metrics. Click one for its

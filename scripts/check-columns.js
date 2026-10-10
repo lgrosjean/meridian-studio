@@ -16,7 +16,7 @@ const vscode = {
 }
 const load = Module._load
 Module._load = (request, ...rest) => (request === 'vscode' ? vscode : load(request, ...rest))
-const { _columnsOf, _priorsOf, _modelChildren, _folderChildren, _referenceIn, _wordRange, _dataset: D, _csv } = require('../out/extension.js')
+const { _columnsOf, _priorsOf, _modelChildren, _folderChildren, _referenceIn, _wordRange, _withoutChecks, _dataset: D, _csv } = require('../out/extension.js')
 
 const cols = Object.fromEntries(_columnsOf('synthetic').map((c) => [c.label, c]))
 assert.equal(cols.time.description, 'time')
@@ -140,4 +140,18 @@ assert.equal(D.suggest('kpi_type: re', 12, csv).length, 0)
 const hovered = (t, word) => D.hover(t, t.indexOf(word) + 1, csv)?.markdown
 assert.equal(hovered(head + '  kpi: sales\n', 'sales'), '`sales` · numbers · 10 – 13\n\ne.g. `10`, `11`, `12`\n\nUsed as kpi')
 assert.equal(hovered(head + '  kpi: sales\n', 'kpi'), undefined)
+// Data checks (runner/checks.py): each finding goes where the YAML first names its column, else on the csv line.
+const named = 'csv: data.csv\n# tv_imps in a comment\ncoord_to_columns:\n  media: [radio_grp, tv_imps]\nmedia_to_channel: { tv_imps: tv }\n'
+const at = (t, c) => { const m = D.mention(t, c); return t.slice(m.start, m.end) + '@' + m.start }
+assert.equal(at(named, 'tv_imps'), 'tv_imps@' + named.indexOf('tv_imps]'))
+assert.equal(at(named, 'week'), 'data.csv@5')
+// checks.columns: completion of the dataset's columns, a warning on one it does not use.
+const checked = head + '  kpi: sales\nchecks:\n  columns:\n    |\n'
+assert.deepEqual(D.suggest(checked.replace('|', ''), checked.indexOf('|'), csv).map((x) => x.insert), ['week: { ignore: [${1}] }', 'geo: { ignore: [${1}] }', 'sales: { ignore: [${1}] }'])
+const typo = head + '  kpi: sales\nchecks:\n  columns:\n    Sales: { ignore: [K002] }\n'
+assert.deepEqual(D.check(typo, csv).filter((p) => p.message.includes('no check')).map((p) => [p.message, p.fixes.map((f) => f.title)]), [['Sales is not a column of this dataset: no check runs on it', ['Replace with sales']]])
+// Which checks are off is not data: a fit stays current when they change.
+assert.equal(_withoutChecks('csv: a.csv\nchecks:\n  ignore: [S001]\n\n  columns: {}\ncoord_to_columns: {}\n'), 'csv: a.csv\ncoord_to_columns: {}\n')
+assert.equal(_withoutChecks('csv: a.csv\nchecks: { ignore: [S001] }\n'), 'csv: a.csv\n')
+assert.equal(_withoutChecks('csv: a.csv\n'), 'csv: a.csv\n')
 console.log('ok')

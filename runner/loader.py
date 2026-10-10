@@ -42,9 +42,9 @@ def read_dataset(project: Path, path: str) -> dict:
         d = yaml.safe_load(file.read_text()) or {}
     except yaml.YAMLError as e:
         raise Fail(f"{path} is not valid YAML: {e}")
-    unknown = set(d) - ARGS - {"name", "csv"}
+    unknown = set(d) - ARGS - {"name", "csv", "checks"}  # checks: the data checks' settings (checks.py)
     if unknown:
-        raise Fail(f"{path}: unknown {', '.join(sorted(unknown))}; accepted: csv, {', '.join(sorted(ARGS))}")
+        raise Fail(f"{path}: unknown {', '.join(sorted(unknown))}; accepted: csv, checks, {', '.join(sorted(ARGS))}")
     for k in ("csv", "coord_to_columns", "kpi_type"):
         if not d.get(k):
             raise Fail(f"{path}: {k} is required")
