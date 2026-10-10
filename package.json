@@ -125,6 +125,17 @@
       {
         "command": "meridian.showRun",
         "title": "Show run results"
+      },
+      {
+        "command": "meridian.complete",
+        "title": "Complete from the CSV",
+        "category": "Meridian",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "meridian.setRole",
+        "title": "Set role\u2026",
+        "icon": "$(tag)"
       }
     ],
     "menus": {
@@ -168,18 +179,33 @@
         },
         {
           "command": "meridian.rename",
-          "when": "view =~ /^meridian\\./",
+          "when": "view =~ /^meridian\\./ && viewItem =~ /^(file|report|running|dataset)$/",
           "group": "7_modification@1"
         },
         {
           "command": "meridian.delete",
-          "when": "view =~ /^meridian\\./",
+          "when": "view =~ /^meridian\\./ && viewItem =~ /^(file|report|running|dataset)$/",
           "group": "7_modification@2"
         },
         {
           "command": "meridian.report",
           "when": "view =~ /^meridian\\./ && viewItem == report",
           "group": "7_modification@0"
+        },
+        {
+          "command": "meridian.setRole",
+          "when": "view == meridian.datasets && viewItem =~ /^column/",
+          "group": "inline@1"
+        },
+        {
+          "command": "meridian.setRole",
+          "when": "view == meridian.datasets && viewItem =~ /^column/",
+          "group": "1_role@1"
+        },
+        {
+          "command": "meridian.complete",
+          "when": "view == meridian.datasets && viewItem == dataset",
+          "group": "6_complete@1"
         }
       ],
       "commandPalette": [
@@ -210,6 +236,14 @@
         {
           "command": "meridian.showRun",
           "when": "false"
+        },
+        {
+          "command": "meridian.setRole",
+          "when": "false"
+        },
+        {
+          "command": "meridian.complete",
+          "when": "resourcePath =~ /[\\\\/]datasets[\\\\/][^\\\\/]+\\.yaml$/"
         }
       ]
     },

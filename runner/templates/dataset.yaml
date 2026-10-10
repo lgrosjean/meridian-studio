@@ -4,7 +4,7 @@
 # Reference: https://developers.google.com/meridian/reference/api/meridian/data/load/CsvDataLoader
 name: {{name}}
 csv: {{csv}}
-kpi_type: revenue            # or non_revenue, with revenue_per_kpi to read results in money
+kpi_type: revenue            # revenue: the KPI is money. non_revenue: units, with revenue_per_kpi to read results in money
 # currency_code: EUR
 coord_to_columns:
   time: {{time}}
