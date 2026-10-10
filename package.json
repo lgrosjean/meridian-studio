@@ -136,6 +136,12 @@
         "command": "meridian.setRole",
         "title": "Set role\u2026",
         "icon": "$(tag)"
+      },
+      {
+        "command": "meridian.checkData",
+        "title": "Check data",
+        "category": "Meridian",
+        "icon": "$(checklist)"
       }
     ],
     "menus": {
@@ -206,6 +212,11 @@
           "command": "meridian.complete",
           "when": "view == meridian.datasets && viewItem == dataset",
           "group": "6_complete@1"
+        },
+        {
+          "command": "meridian.checkData",
+          "when": "view == meridian.datasets && viewItem == dataset",
+          "group": "6_complete@2"
         }
       ],
       "commandPalette": [
@@ -243,6 +254,10 @@
         },
         {
           "command": "meridian.complete",
+          "when": "resourcePath =~ /[\\\\/]datasets[\\\\/][^\\\\/]+\\.yaml$/"
+        },
+        {
+          "command": "meridian.checkData",
           "when": "resourcePath =~ /[\\\\/]datasets[\\\\/][^\\\\/]+\\.yaml$/"
         }
       ]

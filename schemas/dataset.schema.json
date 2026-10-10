@@ -42,7 +42,29 @@
     "frequency_to_channel": { "$ref": "#/definitions/toChannel" },
     "rf_spend_to_channel": { "$ref": "#/definitions/toChannel" },
     "organic_reach_to_channel": { "$ref": "#/definitions/toChannel" },
-    "organic_frequency_to_channel": { "$ref": "#/definitions/toChannel" }
+    "organic_frequency_to_channel": { "$ref": "#/definitions/toChannel" },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The data checks (Check data) on the CSV, by role: which are off, their thresholds. `# noqa: CODE` on a line naming a column turns a check off there.",
+      "properties": {
+        "ignore": { "type": "array", "items": { "$ref": "#/definitions/check" }, "uniqueItems": true, "description": "Checks off for the whole dataset." },
+        "thresholds": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "min_active_share": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.1, "description": "M002: a channel active in fewer weeks than this share of them." },
+            "trailing_weeks": { "type": "integer", "minimum": 1, "default": 4, "description": "M003: a channel at zero over this many last weeks, after activity." },
+            "min_spend_share": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.01, "description": "S001: a channel spending less than this share of all spend." }
+          }
+        },
+        "columns": {
+          "type": "object",
+          "description": "Column → the checks off for it.",
+          "additionalProperties": { "type": "object", "additionalProperties": false, "properties": { "ignore": { "type": "array", "items": { "$ref": "#/definitions/check" }, "uniqueItems": true } } }
+        }
+      }
+    }
   },
   "dependencies": {
     "media_to_channel": ["media_spend_to_channel"],
@@ -50,6 +72,20 @@
   },
   "definitions": {
     "columns": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
-    "toChannel": { "type": "object", "additionalProperties": { "type": "string" } }
+    "toChannel": { "type": "object", "additionalProperties": { "type": "string" } },
+    "check": {
+      "anyOf": [
+      { "const": "T001", "description": "Periods missing between the dates (Meridian wants them regularly spaced)" },
+      { "const": "T002", "description": "Dates not regularly spaced (a step that is not a multiple of the usual one)" },
+      { "const": "T003", "description": "Geos with different dates (Meridian wants the same dates in each geo)" },
+      { "const": "K001", "description": "KPI cells empty after its first value (Meridian takes empty ones only before the KPI starts)" },
+      { "const": "K002", "description": "Negative KPI or revenue per KPI (Meridian refuses them)" },
+      { "const": "M001", "description": "Negative impressions, spend, reach or frequency" },
+      { "const": "M002", "description": "A channel active in too few weeks to estimate (a paid one never active: Meridian refuses it)" },
+      { "const": "M003", "description": "A channel at zero over the last weeks, after activity (data not loaded yet?)" },
+      { "const": "S001", "description": "A channel with a tiny share of all spend (its ROI will be very uncertain)" },
+      { "const": "C001", "description": "A control or treatment that never varies over time (Meridian refuses it)" }
+      ]
+    }
   }
 }
