@@ -10,7 +10,9 @@
   breaks leaves the fit standing, and the panel says why it is missing.
 - The health score in the tree, the notification at the end of a fit and Meridian Runs; in MLflow, a metric
   (`health_score`), each check's status a tag (`review.status`, `review.convergence`…), the health card an artifact.
-- README: a roadmap of what Meridian offers that the extension does not use yet.
+- A roadmap of what Meridian offers that the extension does not use yet, on the documentation site
+  ([Roadmap](https://lgrosjean.github.io/meridian-studio/roadmap/)).
+- A shorter README: what the extension does, how to install it and a quick start; the details are on the site.
 - Releases from a tag, once its tests pass: `vX.Y.Z` publishes to the Marketplace, `vX.Y.Z-rc.N` publishes a
   pre-release, signed in through Microsoft Entra ID rather than a token; the `.vsix` on the GitHub release.
 

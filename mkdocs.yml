@@ -23,6 +23,7 @@ nav:
       - Model YAML: reference/model.md
       - Scenario YAML: reference/scenario.md
       - Commands and settings: reference/commands.md
+  - Roadmap: roadmap.md
   - Development: development.md
   - Changelog: changelog.md
 
