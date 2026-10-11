@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.3
 
 - **Meridian's review of each fit**: once the posterior is sampled, Meridian's model health checks (convergence, a
   negative baseline, the Bayesian p-value, goodness of fit, the shift from prior to posterior, ROI consistent with its
