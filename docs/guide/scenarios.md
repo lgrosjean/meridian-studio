@@ -31,8 +31,8 @@ channel, by the names the dataset gives them.
 ## Optimize
 
 Click **▶ Optimize** above the file, or on the scenario in the tree; it is also a [task](runs.md#tasks), which can
-depend on the model's fit. It reloads the model's latest fit from MLflow (`model.binpb`), so the model must have
-been fitted on this machine, or its MLflow store reached.
+depend on the model's fit. It reloads the model's latest fit (`model.binpb`): the project's copy, or, when it is
+gone (another machine, with a [shared tracking server](models.md#where-runs-and-files-go)), MLflow's.
 
 The results open beside the editor: the budget, outcome and ROI before and after, and each channel's spend, ROI
 and outcome before and after. Meridian's "before" is the historical mix scaled to the scenario's budget: the same
@@ -42,3 +42,8 @@ money, split as before.
 
 They are also in `scenarios/<name>.result.json`, with the fit they came from (its MLflow run), and Meridian's
 optimization summary in `scenarios/<name>.html`.
+
+Each optimization is an MLflow run, under its fit's run: the scenario as parameters (`budget`, `bounds`, `channels`,
+`target`, `window`), the budget, outcome and ROI before and after as metrics, in total and by channel, and Meridian's
+summary, the scenario's YAML and its result as artifacts. A scenario refused before it starts (a budget it cannot
+read, say) makes no run. **Open MLflow**, on the scenario, opens it.

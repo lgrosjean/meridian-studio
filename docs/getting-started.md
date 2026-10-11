@@ -51,7 +51,8 @@ The project ends up as:
   scenarios/plus-10.yaml
   scenarios/plus-10.result.json    spend and outcome per channel, before and after
   scenarios/plus-10.html           Meridian's optimization summary
-  mlflow.db, mlruns/               the local MLflow store (keep it out of git)
+  mlflow.db, mlruns/               the local MLflow store, or with a server the copy of each fit's model and report
+                                   (keep them out of git)
 ```
 
 !!! tip "No CSV at hand?"

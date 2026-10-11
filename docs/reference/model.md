@@ -12,6 +12,7 @@
 | `model_spec`     | `ModelSpec`'s arguments ([below](#model_spec))                                        |
 | `priors`         | `PriorDistribution`'s fields ([below](#priors))                                       |
 | `sampling`       | how many chains and draws ([below](#sampling))                                        |
+| `mlflow`         | how its fits are logged to MLflow ([below](#mlflow))                                  |
 
 ## `model_spec`
 
@@ -103,3 +104,15 @@ Hover a field in the editor for Meridian's own description of it.
 | `n_burnin` | `0`      | burn-in steps after adaptation                                         |
 | `n_keep`   | `1000`   | draws kept per chain                                                   |
 | `seed`     |          | for reproducible fits                                                  |
+
+## `mlflow`
+
+How the model's fits are logged to MLflow ([History and MLflow](../guide/models.md#history-and-mlflow)). Every key is
+optional, and changing them leaves the fit current.
+
+| Key           | Default   | Value                                                                                   |
+|---------------|-----------|-----------------------------------------------------------------------------------------|
+| `run_name`    | `{model}` | each fit's run name; `{model}` and `{dataset}` stand for their names                    |
+| `description` |           | each fit's description in MLflow, in Markdown: what this model tries                    |
+| `tags`        |           | more tags on each fit's run: `{ owner: marketing, ticket: MMM-42 }`                     |
+| `autolog`     | `true`    | Meridian's own MLflow autologging: its version, the `ModelSpec` and priors as Meridian resolved them (its defaults included), the sampling's arguments |

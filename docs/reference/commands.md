@@ -12,6 +12,7 @@
 | Stop (■)              | a running model or scenario                               | stops the run                                                   |
 | Show results          | a model or scenario that ran: inline, and above the file   | the latest run's results, beside the editor                     |
 | Open Meridian report  | a model or scenario that ran, right-click                 | Meridian's HTML report, in the editor                           |
+| Open MLflow           | Models' title bar; a model, scenario or past fit, right-click; the results panel; the palette | MLflow's UI on the project's experiment, or on that run ([Open MLflow](../guide/models.md#open-mlflow)) |
 | Complete from the CSV | a dataset, right-click; **Complete from \<csv\>** above the file | places the CSV's unused columns ([Datasets](../guide/datasets.md#filled-from-the-csv)) |
 | Check data            | a dataset, right-click; **Check the data** above the file  | the dataset's [data checks](../guide/data-checks.md)            |
 | Check with Meridian   | a model, right-click; **Check** above the file             | Meridian's data checks with the model's spec, without sampling  |
@@ -32,6 +33,7 @@ Examples in [Runs and tasks](../guide/runs.md#tasks).
 
 ## Settings
 
-| Setting                      | Default | Meaning                                                                                  |
-|------------------------------|---------|------------------------------------------------------------------------------------------|
-| `meridian.mlflowTrackingUri` | empty   | where fits are logged. Empty: a SQLite store in the project (`mlflow.db`, `mlruns/`). A URI such as `http://mlflow.example.com:5000` logs to that server instead. |
+| Setting                           | Default | Meaning                                                                             |
+|-----------------------------------|---------|-------------------------------------------------------------------------------------|
+| `meridian.mlflowTrackingUri`      | empty   | where fits and scenarios are logged (their params, metrics, tags). Empty: a SQLite store in the project (`mlflow.db`). A URI such as `http://mlflow.example.com:5000` logs to that server instead. Also read from `MLFLOW_TRACKING_URI`. |
+| `meridian.mlflowArtifactLocation` | empty   | where a new experiment keeps its runs' files. Empty: `mlruns/` in the project with the project's store, the server's own artifact store with a server. MLflow sets it when it creates the experiment, and never moves it ([where runs and files go](../guide/models.md#where-runs-and-files-go)). |
