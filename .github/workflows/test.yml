@@ -30,8 +30,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with:
-          enable-cache: true
-          cache-dependency-glob: runner/uv.lock
+          enable-cache: false # PyPI's wheels download (8-17 s) faster than a cache of them restores (20 s)
       - run: uv run --project runner runner/test_runner.py
 
   vscode:
@@ -42,8 +41,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - uses: astral-sh/setup-uv@v6
         with:
-          enable-cache: true
-          cache-dependency-glob: runner/uv.lock
+          enable-cache: false # PyPI's wheels download (8-17 s) faster than a cache of them restores (20 s)
       - run: bun install --frozen-lockfile
       - run: uv sync --project runner # Meridian's environment: the data checks then run on their own
       - uses: actions/cache@v4 # VS Code and the YAML extension, not the test's profile

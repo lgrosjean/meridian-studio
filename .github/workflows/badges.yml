@@ -1,0 +1,43 @@
+# The Marketplace's download count, for the README's badge. shields.io retired its Visual Studio Marketplace
+# badges, so once a day this asks the Marketplace itself and leaves a shields.io endpoint file, downloads.json, as
+# the only commit of the `badges` branch; the badge reads it from there.
+name: badges
+on:
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  downloads:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: package.json
+          sparse-checkout-cone-mode: false
+      - name: Ask the Marketplace
+        run: |
+          id=$(jq -r '.publisher + "." + .name' package.json)
+          curl -sSf -X POST https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery \
+            -H 'Content-Type: application/json' -H 'Accept: application/json;api-version=3.0-preview.1' \
+            -d "{\"filters\":[{\"criteria\":[{\"filterType\":7,\"value\":\"$id\"}]}],\"flags\":256}" > query.json
+          mkdir out
+          python3 - <<'PY'
+          import json
+          ext = json.load(open("query.json"))["results"][0]["extensions"][0]
+          n = int({s["statisticName"]: s["value"] for s in ext["statistics"]}.get("downloadCount", 0))
+          count = f"{n / 1e6:.1f}M" if n >= 1e6 else f"{n / 1e3:.1f}k" if n >= 1e4 else str(n)
+          badge = {"schemaVersion": 1, "label": "downloads", "message": count, "color": "blue", "namedLogo": "visualstudiocode"}
+          json.dump(badge, open("out/downloads.json", "w"))
+          print(badge)
+          PY
+      - name: Leave it on the badges branch
+        working-directory: out
+        run: |
+          git init -q -b badges
+          git add downloads.json
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -q -m "Marketplace downloads, $(date -u +%F)"
+          git push -q --force "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" badges
