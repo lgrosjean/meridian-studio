@@ -6,6 +6,7 @@
 results; tick two to compare them: their metrics, ROI by channel, and the configuration that differs.
 
 Each model's own runs are also under it in the sidebar; an [outdated](models.md#history-and-mlflow) one is flagged.
+Right-click one, or use the button of its results, to [open it in MLflow](models.md#open-mlflow).
 
 ## Tasks
 

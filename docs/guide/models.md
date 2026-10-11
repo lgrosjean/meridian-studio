@@ -85,14 +85,48 @@ Meridian's own HTML report opens in the editor too: **Open Meridian report**, ri
 
 Every fit is an MLflow run, in the experiment named after the project's folder:
 
-- **parameters**: `model_spec`, `sampling` and `priors`, flattened;
+- **parameters**: `model_spec`, `sampling` and `priors`, flattened; and, from Meridian's own autologging, its
+  version, the `ModelSpec` and priors as Meridian resolved them (its defaults included) and the sampling's arguments;
 - **metrics**: r-hat, divergences, R², MAPE, wMAPE, the fit's seconds, and each channel's ROI, interval and
   contribution;
+- **input**: the dataset, as fitted (MLflow's Datasets), from its CSV;
 - **artifacts**: the fitted model (`model.binpb`, which a [scenario](scenarios.md) reloads), Meridian's report
   (`summary.html`), the data as fitted (`dataset.parquet`), the model's and the dataset's YAML.
 
-Fits log to `mlflow.db` and `mlruns/` in the project, which go into its `.gitignore`; the
-`meridian.mlflowTrackingUri` [setting](../reference/commands.md#settings) logs them to a server instead.
+The run opens once the YAML and the CSV are read, before Meridian is built: a mistake in them makes no run, and a fit
+that fails after that shows as FAILED. Each [optimization](scenarios.md#optimize) is a run too, under its fit's.
+
+An optional `mlflow:` block names, describes and tags the model's runs ([reference](../reference/model.md#mlflow));
+changing it leaves the fit current:
+
+```yaml
+mlflow:
+  run_name: "{model} on {dataset}"   # default {model}, the file's name
+  description: TV's ROI prior from the March geo test
+  tags: { owner: marketing, ticket: MMM-42 }
+  autolog: false                     # Meridian's autologging, on by default
+```
+
+### Where runs and files go
+
+MLflow keeps runs (params, metrics, tags) in a tracking store and their files in an artifact store. By default both
+are in the project, `mlflow.db` and `mlruns/`, which go into its `.gitignore`.
+
+With a tracking server (the `meridian.mlflowTrackingUri` [setting](../reference/commands.md#settings)), the files go
+where the server keeps them: `mlflow server --artifacts-destination s3://bucket/mmm` puts them in a bucket, and the
+editor needs no credentials for it. The project then keeps a copy of each fit's model and report in `mlruns/`, for
+the optimizer and the report; when that copy is gone (another machine, a clean checkout), the optimizer fetches the
+model from MLflow.
+
+`meridian.mlflowArtifactLocation` sends a new experiment's files somewhere else, a shared folder say. MLflow sets it
+when it creates the experiment and never moves it: it does not apply to a project that already has one.
+
+### Open MLflow
+
+**Open MLflow** opens MLflow's UI: on a model, a scenario or a past fit (right-click, or the button of its results
+panel), on that run; from the Models view's title bar or the palette, on the project's experiment. With a tracking
+server, its own UI; with the project's store, a local `mlflow server`, started on first use and stopped with the
+editor.
 
 The latest fit is also in `models/<name>.result.json`, and every fit appends a line to `models/<name>.runs.jsonl`
 (when, the configuration, what it found): its runs, listed under the model; click one to see its results again.
