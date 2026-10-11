@@ -1,6 +1,6 @@
 """Self-check: the data checks on CSVs made to break them; fit the synthetic example tiny, optimize on it; assert on the
-protocol and the files.
-Run: uv run --project runner runner/test_runner.py   (a minute or two on CPU)"""
+protocol, the files and the MLflow runs; then fit and optimize again against a local mlflow server keeping the files.
+Run: uv run --project runner runner/test_runner.py   (a few minutes on CPU)"""
 import json
 import os
 import shutil

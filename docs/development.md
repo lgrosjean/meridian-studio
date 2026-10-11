@@ -20,7 +20,8 @@ The extension is TypeScript, bundled by [bun](https://bun.sh); fits and optimiza
 
 - `bun install`, then ++f5++ opens `examples/` with the extension loaded.
 - `bun run test`: type check, bundle, the tree's and the dataset helper's logic, then the runner (data checks, a
-  tiny fit of the example, an optimization).
+  tiny fit of the example, an optimization, their MLflow runs; then the same against a local `mlflow server` keeping
+  the files itself). A few minutes on CPU.
 - `bun run test:vscode`: the extension in a real VS Code with the YAML extension (both downloaded into
   `.vscode-test/` the first time; on Linux without a display, `xvfb-run -a bun run test:vscode`). Its data checks
   part needs `uv sync --project runner`.
