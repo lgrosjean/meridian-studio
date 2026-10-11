@@ -148,6 +148,12 @@
         "title": "Check with Meridian",
         "category": "Meridian",
         "icon": "$(checklist)"
+      },
+      {
+        "command": "meridian.openMlflow",
+        "title": "Open MLflow",
+        "category": "Meridian",
+        "icon": "$(link-external)"
       }
     ],
     "menus": {
@@ -166,6 +172,11 @@
           "command": "meridian.newScenario",
           "when": "view == meridian.scenarios",
           "group": "navigation"
+        },
+        {
+          "command": "meridian.openMlflow",
+          "when": "view == meridian.models",
+          "group": "navigation@8"
         },
         {
           "command": "meridian.refresh",
@@ -202,6 +213,11 @@
         {
           "command": "meridian.report",
           "when": "view =~ /^meridian\\./ && viewItem == report",
+          "group": "7_modification@0"
+        },
+        {
+          "command": "meridian.openMlflow",
+          "when": "view =~ /^meridian\\.(models|scenarios)$/ && viewItem =~ /^(report|run)$/",
           "group": "7_modification@0"
         },
         {
@@ -283,7 +299,12 @@
         "meridian.mlflowTrackingUri": {
           "type": "string",
           "default": "",
-          "description": "Where fits are logged. Empty: a SQLite store in the project (mlflow.db, mlruns/). A URI such as http://mlflow.example.com:5000 logs to that server instead."
+          "markdownDescription": "Where fits and scenarios are logged (their params, metrics, tags). Empty: a SQLite store in the project (`mlflow.db`). A URI such as `http://mlflow.example.com:5000` logs to that server instead. Also read from `MLFLOW_TRACKING_URI`."
+        },
+        "meridian.mlflowArtifactLocation": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Where a new experiment keeps its runs' files (the model, Meridian's report, the data): a folder, or a URI MLflow writes to. Empty: `mlruns/` in the project with the project's store; the store's own with a tracking server (`mlflow server --artifacts-destination s3://…` keeps them in a bucket, no SDK needed here). MLflow sets it when it creates the experiment and never moves it. When the files are not on this machine, the project keeps a copy of each fit's model and report in `mlruns/`."
         }
       }
     },

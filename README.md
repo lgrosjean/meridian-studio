@@ -35,7 +35,7 @@ Fits run on your machine, on CPU.
 |-----------|--------------|----------------------------------------------------------------|------------------------------------------|
 | Datasets  | `datasets/`  | a CSV and how Meridian reads it (`CsvDataLoader`'s arguments)  | nothing: a fit reads the CSV             |
 | Models    | `models/`    | the dataset, `ModelSpec`, priors, sampling                     | the fit, logged to MLflow                |
-| Scenarios | `scenarios/` | the model, a budget, bounds per channel, or an ROI target      | Meridian's `BudgetOptimizer` on that fit |
+| Scenarios | `scenarios/` | the model, a budget, bounds per channel, or an ROI target      | Meridian's `BudgetOptimizer` on that fit, logged under it |
 
 - **Completion and errors while you type**, from a JSON schema per kind (through the YAML extension, installed
   with this one), and for a dataset from its CSV (below). Columns named in a dataset but absent from its CSV show
@@ -169,12 +169,13 @@ Which checks are off is not data: changing them leaves the dataset's fits curren
 
 ## MLflow
 
-Each fit is one MLflow run, in an experiment named after the project's folder, in the store
-`meridian.mlflowTrackingUri` names (by default `mlflow.db` and `mlruns/` in the project). Its params are the model's
-`model_spec`, `sampling` and `priors`; its metrics R², MAPE, r-hat, divergences and ROI by channel; its artifacts
-Meridian's report, the reloadable model (`model.binpb`), the data and both YAMLs. Meridian's own autologging adds its
-version, the `ModelSpec` and priors as Meridian resolved them (its defaults included) and the sampling's arguments.
-The run opens once the YAML and the CSV are read: a fit that fails after that shows as FAILED.
+Each fit is one MLflow run, in an experiment named after the project's folder. Its params are the model's
+`model_spec`, `sampling` and `priors`; its metrics R², MAPE, r-hat, divergences and ROI by channel; its input the
+dataset, as fitted; its artifacts Meridian's report, the reloadable model (`model.binpb`), the data and both YAMLs.
+Meridian's own autologging adds its version, the `ModelSpec` and priors as Meridian resolved them (its defaults
+included) and the sampling's arguments. The run opens once the YAML and the CSV are read: a fit that fails after that
+shows as FAILED. Each optimization is a run too, under its fit's: the scenario as params, budget, outcome and ROI
+before and after as metrics, Meridian's summary as an artifact.
 
 An optional `mlflow:` block in a model names, describes and tags its runs; changing it leaves the fit current:
 
@@ -186,11 +187,24 @@ mlflow:
   autolog: false                     # Meridian's autologging, on by default
 ```
 
+**Where.** MLflow keeps runs (params, metrics, tags) in a tracking store and their files in an artifact store.
+By default both are in the project: `mlflow.db`, and `mlruns/`. With a tracking server
+(`meridian.mlflowTrackingUri`), the files go where the server keeps them: `mlflow server --artifacts-destination
+s3://bucket/mmm` puts them in a bucket, and the editor needs no credentials for it. The project then keeps a copy of
+each fit's model and report in `mlruns/`, for the optimizer and the report; when that copy is gone (another machine,
+a clean checkout), the optimizer fetches the model from MLflow. `meridian.mlflowArtifactLocation` sends a new
+experiment's files somewhere else: a shared folder, say.
+
+**Open MLflow** (in the palette, above the Models view, on a model, a scenario or a past run, and in the results
+panel) opens MLflow's UI on the experiment or on that run: the tracking server's, or a local `mlflow server` on the
+project's store, started on first use and stopped with the editor.
+
 ## Settings
 
-| Setting                     | Default | Meaning                                                                 |
-|-----------------------------|---------|-------------------------------------------------------------------------|
-| `meridian.mlflowTrackingUri` | empty   | Where fits are logged. Empty: `mlflow.db` and `mlruns/` in the project. |
+| Setting                           | Default | Meaning                                                                                         |
+|-----------------------------------|---------|-------------------------------------------------------------------------------------------------|
+| `meridian.mlflowTrackingUri`      | empty   | Where runs are logged. Empty: `mlflow.db` in the project. Else a server: `http://host:5000`.    |
+| `meridian.mlflowArtifactLocation` | empty   | Where a new experiment keeps its runs' files. Empty: `mlruns/` locally, the server's otherwise. |
 
 ## Files
 
@@ -204,7 +218,8 @@ mlflow:
   scenarios/plus-10.yaml
   scenarios/plus-10.result.json    spend and outcome per channel, before and after
   scenarios/plus-10.html           Meridian's optimization summary
-  mlflow.db, mlruns/               the local MLflow store (keep it out of git)
+  mlflow.db, mlruns/               the local MLflow store, or with a server the copy of each fit's model and report
+                                   (keep them out of git)
 ```
 
 ## Development

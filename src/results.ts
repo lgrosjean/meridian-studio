@@ -102,39 +102,43 @@ td.bar{width:40%}.track,.pair{position:relative;height:12px}
 pre{font-family:var(--vscode-editor-font-family);font-size:.92em;background:var(--vscode-textCodeBlock-background);padding:8px 10px;border-radius:4px;overflow:auto}
 .up{color:var(--vscode-testing-iconPassed)}.down{color:var(--vscode-editorWarning-foreground)}`
 
-function page(title: string, body: string, hasReport: boolean): string {
+function page(title: string, body: string, hasReport: boolean, hasRun: boolean): string {
   const nonce = randomBytes(16).toString('base64')
   return `<!doctype html><html><head><meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'">
   <style>${STYLE}</style></head><body>
-  <div class="head"><h1>${esc(title)}</h1>${hasReport ? '<button id="report">Open Meridian report</button>' : ''}</div>
+  <div class="head"><h1>${esc(title)}</h1><div>${hasRun ? '<button id="mlflow">Open in MLflow</button> ' : ''}${hasReport ? '<button id="report">Open Meridian report</button>' : ''}</div></div>
   ${body}
-  <script nonce="${nonce}">const vs=acquireVsCodeApi();document.getElementById('report')?.addEventListener('click',()=>vs.postMessage('report'))</script>
+  <script nonce="${nonce}">const vs=acquireVsCodeApi();for(const id of ['report','mlflow'])document.getElementById(id)?.addEventListener('click',()=>vs.postMessage(id))</script>
   </body></html>`
 }
 
 const panels = new Map<string, vscode.WebviewPanel>() // by result.json path
 
-/** Shows (or refreshes) the panel of a model or a scenario. `result` is its result.json's text, undefined if none yet. */
-export function showResults(kind: 'models' | 'scenarios', name: string, file: string, result: string | undefined, openReport: () => void, reveal = true) {
+/** Shows (or refreshes) the panel of a model or a scenario. `result` is its result.json's text, undefined if none yet.
+ * `open` opens Meridian's report and the run in MLflow. */
+export function showResults(kind: 'models' | 'scenarios', name: string, file: string, result: string | undefined, open: { report: () => void; mlflow: () => void }, reveal = true) {
   let panel = panels.get(file)
   if (!panel) {
     if (!reveal) return
     panel = vscode.window.createWebviewPanel('meridian.results', name, { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true }, { enableScripts: true })
     panel.iconPath = new vscode.ThemeIcon(kind === 'models' ? 'graph-line' : 'pie-chart')
-    panel.webview.onDidReceiveMessage((m) => m === 'report' && openReport())
+    panel.webview.onDidReceiveMessage((m) => (m === 'report' ? open.report() : m === 'mlflow' && open.mlflow()))
     panel.onDidDispose(() => panels.delete(file))
     panels.set(file, panel)
   } else if (reveal) panel.reveal(undefined, true)
   let body = `<p class="dim">No results yet: ${kind === 'models' ? 'fit' : 'optimize'} it first.</p>`
+  let run = false
   if (result)
     try {
-      body = kind === 'models' ? fitBody(JSON.parse(result)) : scenarioBody(JSON.parse(result))
+      const r = JSON.parse(result)
+      body = kind === 'models' ? fitBody(r) : scenarioBody(r)
+      run = !!r.mlflow?.run_id
     } catch (e) {
       body = `<p>Could not read ${esc(file)}: ${esc(e instanceof Error ? e.message : e)}</p>`
     }
   panel.title = name
-  panel.webview.html = page(`${kind === 'models' ? 'Fit' : 'Scenario'} · ${name}`, body, !!result)
+  panel.webview.html = page(`${kind === 'models' ? 'Fit' : 'Scenario'} · ${name}`, body, !!result, run)
 }
 
 /** Re-renders the open panels, after a file changed. */

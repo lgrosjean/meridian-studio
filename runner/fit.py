@@ -5,8 +5,10 @@ import inspect
 import json
 import os
 import re
+import shutil
 import tempfile
 import time
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -14,6 +16,7 @@ import pandas as pd
 import yaml
 
 from loader import Fail, clean, channels_of, frame, input_data
+from tracking import cached, experiment, flat, local_path
 
 
 def read_model(project: Path, path: str) -> dict:
@@ -79,27 +82,6 @@ def window(df: pd.DataFrame, t: str, w: dict | None) -> pd.DataFrame:
     return df[keep].reset_index(drop=True)
 
 
-def gitignore(project: Path):
-    file = project / ".gitignore"
-    lines = file.read_text().splitlines() if file.exists() else []
-    missing = [l for l in ("mlruns/", "mlflow.db") if l not in lines]
-    if missing:
-        file.write_text("\n".join(lines + missing) + "\n")
-
-
-def tracking(project: Path):
-    """The project's experiment, in the store MLFLOW_TRACKING_URI names (the extension's setting), else in the project."""
-    import mlflow
-
-    gitignore(project)
-    if not os.environ.get("MLFLOW_TRACKING_URI"):
-        mlflow.set_tracking_uri(f"sqlite:///{project / 'mlflow.db'}")
-    exp = project.resolve().name
-    if mlflow.get_experiment_by_name(exp) is None:
-        mlflow.create_experiment(exp, artifact_location=(project / "mlruns").resolve().as_uri())
-    mlflow.set_experiment(exp)
-
-
 MLFLOW = ("run_name", "description", "tags", "autolog")
 
 
@@ -125,16 +107,6 @@ def run_options(m: dict) -> dict:
         "tags": {str(k): str(v) for k, v in tags.items()},
         "autolog": bool(x.get("autolog", True)),
     }
-
-
-def flat(d: dict, prefix: str = "") -> dict:
-    out = {}
-    for k, v in d.items():
-        if isinstance(v, dict):
-            out |= flat(v, f"{prefix}{k}.")
-        else:
-            out[f"{prefix}{k}"] = v
-    return out
 
 
 def inputs(project: Path, m: dict, emit):
@@ -194,7 +166,7 @@ def fit(project: Path, path: str, emit) -> dict:
     m = read_model(project, path)
     name = m["_file"].stem
     options = run_options(m)
-    tracking(project)
+    experiment(project)
     if options.pop("autolog"):
         from meridian.mlflow import autolog
 
@@ -205,6 +177,10 @@ def fit(project: Path, path: str, emit) -> dict:
     # The run opens once the YAML and the CSV hold, before Meridian: Meridian logs into it as it builds and samples,
     # and a fit that fails from there shows in MLflow as FAILED.
     with mlflow.start_run(**options) as run:
+        with warnings.catch_warnings():  # MLflow's hints on reading a path as a source, and on integer columns
+            warnings.simplefilter("ignore")
+            source = mlflow.data.from_pandas(df, source=d["_csv"].resolve().as_uri(), name=m["dataset"], targets=d["coord_to_columns"].get("kpi"))
+        mlflow.log_input(source, context="training")  # the rows fitted: the window's, as read from the CSV
         mmm, items = build(data, ms, emit)
         emit(event="checks", items=items)
         if mmm is None:
@@ -260,7 +236,7 @@ def fit(project: Path, path: str, emit) -> dict:
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             mlflow.set_tags({
-                "studio.project": str(project.resolve()), "studio.model": path, "studio.dataset": ds_path,
+                "studio.kind": "fit", "studio.project": str(project.resolve()), "studio.model": path, "studio.dataset": ds_path,
                 "studio.dataset_fingerprint": fingerprint, 
             })
             mlflow.log_params(flat({
@@ -279,10 +255,19 @@ def fit(project: Path, path: str, emit) -> dict:
             (tmp / "dataset.yaml").write_text(d["_file"].read_text())
             mlflow.log_artifacts(str(tmp))
             # ponytail: no Mmm proto with analyses; create_mmm_proto needs processor specs. model.binpb is the reloadable kernel.
-            artifacts = Path(mlflow.get_artifact_uri().removeprefix("file://"))
+            uri = mlflow.get_artifact_uri()
+            artifacts = local_path(uri)
+            if artifacts is None:  # in another store: a copy here of what the optimizer and the report read
+                artifacts = cached(project, run.info.run_id)
+                artifacts.mkdir(parents=True, exist_ok=True)
+                for f in ("model.binpb", "summary.html"):
+                    shutil.copy2(tmp / f, artifacts / f)
             rel = os.path.relpath(artifacts, project.resolve())
             result = {
-                "mlflow": {"run_id": run.info.run_id, "artifacts": rel, "report": f"{rel}/summary.html"},
+                "mlflow": {
+                    "run_id": run.info.run_id, "experiment_id": run.info.experiment_id, "artifact_uri": uri,
+                    "artifacts": rel, "report": f"{rel}/summary.html",
+                },
                 "fit": fit_block,
                 "channels": rows,
                 "currency": d.get("currency_code"),
