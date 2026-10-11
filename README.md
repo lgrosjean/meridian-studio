@@ -32,8 +32,8 @@ Every run is tracked in MLflow.
 
 - **VS Code**: install [Meridian Studio](https://marketplace.visualstudio.com/items?itemName=lgrosjean.meridian-studio)
   from the Marketplace.
-- **Cursor**: download the `.vsix` from the Marketplace page, then run
-  `cursor --install-extension meridian-studio-<version>.vsix`.
+- **Cursor, VSCodium**: install [Meridian Studio](https://open-vsx.org/extension/lgrosjean/meridian-studio) from
+  Open VSX, in the Extensions view.
 
 ## Quick start
 

@@ -5,6 +5,8 @@
 - Releases also publish to [Open VSX](https://open-vsx.org), where Cursor and VSCodium install extensions from:
   through trusted publishing (no token) once the namespace's owner registers the workflow, an access token until
   then.
+- On Open VSX from 0.1.3: Cursor and VSCodium install Meridian Studio from their Extensions view, no `.vsix` to
+  download.
 
 ## 0.1.3
 

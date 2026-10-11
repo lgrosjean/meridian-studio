@@ -13,11 +13,11 @@
 
 === "Cursor"
 
-    Cursor installs from Open VSX, where Meridian Studio is not published yet. Download the `.vsix` from the
-    [Marketplace page](https://marketplace.visualstudio.com/items?itemName=lgrosjean.meridian-studio), then:
+    Cursor installs from Open VSX: install
+    [Meridian Studio](https://open-vsx.org/extension/lgrosjean/meridian-studio) from the Extensions view, or:
 
     ```sh
-    cursor --install-extension meridian-studio-<version>.vsix
+    cursor --install-extension lgrosjean.meridian-studio
     ```
 
 It needs VS Code 1.100 or later, and installs Red Hat's [YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml)
