@@ -36,7 +36,8 @@ CI (`.github/workflows/test.yml`) runs the tests on every push to a branch, and 
 
 ## Releases
 
-A tag publishes the extension to the VS Code Marketplace once the tests pass on it (`.github/workflows/release.yml`):
+A tag publishes the extension to the VS Code Marketplace and to [Open VSX](https://open-vsx.org) (Cursor, VSCodium…)
+once the tests pass on it (`.github/workflows/release.yml`):
 
 | Tag           | Publishes            |
 |---------------|----------------------|
@@ -98,6 +99,27 @@ No token: the workflow signs in to Microsoft Entra ID as a managed identity that
    publisher, and publishes nothing. The first time, the check fails: add that ID to the publisher's members
    ([marketplace.visualstudio.com/manage](https://marketplace.visualstudio.com/manage/publishers/lgrosjean), Members),
    role Contributor, and run it again.
+
+### Signing in to Open VSX
+
+`ovsx publish` exchanges the same OIDC token for a short-lived one when Open VSX trusts the workflow (trusted
+publishing), or uses an access token in the `OVSX_PAT` secret when there is one. Only the namespace's owner can
+register a trusted publisher, and publishing makes its GitHub account a contributor, not the owner; so the token
+first. Once, all in the browser:
+
+1. **An account**: sign in to [open-vsx.org](https://open-vsx.org) with GitHub, create an
+   [Eclipse account](https://accounts.eclipse.org/user/register) with the same GitHub username, then in Settings
+   › Profile, **Log in with Eclipse** and sign the Publisher Agreement.
+2. **The namespace**: Publish › Publish Extension, a `.vsix` from a GitHub release. The upload creates the namespace
+   named after the GitHub account, `lgrosjean`, the `publisher` of `package.json`.
+3. **The token**: Settings › Access Tokens › Generate New Token, as the secret `OVSX_PAT` of the `marketplace`
+   environment. The dry run checks it (`ovsx verify-pat`).
+4. **Then, without it**: claim the namespace's ownership (an issue on
+   [EclipseFdn/open-vsx.org](https://github.com/EclipseFdn/open-vsx.org/issues), its namespace template; see
+   [Managing Namespaces](https://github.com/EclipseFdn/open-vsx.org/wiki/Managing-Namespaces)). Once owner, register
+   this repository's `release.yml`, environment `marketplace`, as a
+   [trusted publisher](https://open-vsx.org/user-settings/trusted-publishers), and delete `OVSX_PAT`: the dry run
+   then checks the exchange itself.
 
 ## This site
 

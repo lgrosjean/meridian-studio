@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Releases also publish to [Open VSX](https://open-vsx.org), where Cursor and VSCodium install extensions from:
+  through trusted publishing (no token) once the namespace's owner registers the workflow, an access token until
+  then.
+
 ## 0.1.3
 
 - **Meridian's review of each fit**: once the posterior is sampled, Meridian's model health checks (convergence, a

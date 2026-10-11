@@ -1,11 +1,13 @@
-# Publishes the extension to the VS Code Marketplace when a version is tagged, once the tests pass. The tag names
-# package.json's version: v0.4.0 publishes a release, v0.3.0-rc.1 a pre-release. The Marketplace takes X.Y.Z only, so
-# the suffix picks the channel, not the number: each publication has its own X.Y.Z. The .vsix goes on the tag's
-# GitHub release.
+# Publishes the extension to the VS Code Marketplace and Open VSX (Cursor, VSCodium…) when a version is tagged, once
+# the tests pass. The tag names package.json's version: v0.4.0 publishes a release, v0.3.0-rc.1 a pre-release. The
+# Marketplace takes X.Y.Z only, so the suffix picks the channel, not the number: each publication has its own X.Y.Z.
+# The .vsix goes on the tag's GitHub release.
 # No token: the job signs in to Microsoft Entra ID as a managed identity that trusts this repository's `marketplace`
-# environment (GitHub's OIDC), and vsce publishes as that identity. Run by hand with a tag, it tags the commit it runs
-# on and publishes it, as a pushed tag would (no git needed). Without one, it publishes nothing: it packages, prints
-# what the setup needs (the OIDC subject, the identity's ID) and checks the identity's rights on the publisher.
+# environment (GitHub's OIDC), and vsce publishes as that identity; ovsx exchanges the same OIDC token with Open VSX,
+# whose namespace owner registers this workflow as a trusted publisher (or, until then, reads OVSX_PAT). Run by hand
+# with a tag, it tags the commit it runs on and publishes it, as a pushed tag would (no git needed). Without one, it
+# publishes nothing: it packages, prints what the setup needs (the OIDC subject, the identity's ID) and checks the
+# rights on the Marketplace's publisher and on Open VSX's namespace.
 # Setup: docs/development.md, Releases.
 name: release
 on:
@@ -110,6 +112,17 @@ jobs:
           az rest --url 'https://app.vssps.visualstudio.com/_apis/connectionData' \
             --resource 499b84ac-1321-427f-aa17-267ca6975798 --query authenticatedUser.id --output tsv
           bunx vsce verify-pat "$(jq -r .publisher package.json)" --azure-credential
+      - name: Open VSX, its token or its trusted publisher
+        if: needs.version.outputs.tag == ''
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          if [ -n "$OVSX_PAT" ]; then bunx ovsx verify-pat "$(jq -r .publisher package.json)"; exit; fi
+          # the exchange ovsx publish makes, without publishing: the token it returns is dropped
+          id_token=$(curl -sSf -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://open-vsx.org" | jq -r .value)
+          jq -n --arg token "$id_token" --slurpfile pkg package.json '{namespace: $pkg[0].publisher, extension: $pkg[0].name, $token}' \
+            | curl -sS -X POST https://open-vsx.org/api/-/trusted-publishing/token -H 'Content-Type: application/json' -d @- \
+            | jq -er 'if .error then error(.error) else "Open VSX trusts this workflow" end'
       - name: The tag, run by hand with one
         if: github.event_name == 'workflow_dispatch' && needs.version.outputs.tag != ''
         # the workflow's token: the tag starts no other run, this one publishes it
@@ -118,6 +131,12 @@ jobs:
         if: needs.version.outputs.tag != ''
         # --skip-duplicate: this job run again, once published; the version job stopped any other duplicate
         run: bunx vsce publish --azure-credential --packagePath "$VSIX" ${PRE_RELEASE:+--pre-release} --skip-duplicate
+      - name: Publish to Open VSX
+        if: needs.version.outputs.tag != ''
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }} # empty: trusted publishing, the job's OIDC token exchanged
+        # the .vsix says whether it is a pre-release; --skip-duplicate as above
+        run: bunx ovsx publish --packagePath "$VSIX" --skip-duplicate
       - name: The GitHub release, with the .vsix
         if: needs.version.outputs.tag != ''
         env:
