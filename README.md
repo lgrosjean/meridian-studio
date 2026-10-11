@@ -225,7 +225,8 @@ project's store, started on first use and stopped with the editor.
 ## Development
 
 - `bun install`, then F5 opens `examples/` with the extension loaded.
-- `bun run test`: type check, bundle, the tree's logic, then the runner (fits the example tiny, optimizes it).
+- `bun run test`: type check, bundle, the tree's logic, then the runner (fits the example tiny, optimizes it, in the
+  project's MLflow store and against a local `mlflow server`).
 - `bun run test:vscode`: the extension in a real VS Code with the YAML extension (both downloaded into `.vscode-test/`
   the first time; on Linux without a display, `xvfb-run -a bun run test:vscode`). Its data checks part needs
   `uv sync --project runner`.
