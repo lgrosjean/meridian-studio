@@ -1,4 +1,4 @@
 # Commits and pull requests
 
-No "Generated with Claude Code" line and no Claude session link (claude.ai/code/session_…) in commit messages or
-pull request descriptions. The Co-Authored-By trailer stays.
+No attribution to Claude in commit messages or pull request descriptions: no Co-Authored-By trailer, no "Generated
+with Claude Code" line, no Claude session link (claude.ai/code/session_…).
