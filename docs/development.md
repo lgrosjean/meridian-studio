@@ -64,10 +64,10 @@ No token: the workflow signs in to Microsoft Entra ID as a managed identity that
 2026.) Once:
 
 1. **A managed identity**, user-assigned, in any Azure subscription: a free one does, the identity costs nothing and
-   needs no role.
+   needs no role, and any region (some refuse new subscriptions: `RequestDisallowedByAzure`; take another).
 
     ```sh
-    az group create --name meridian-studio --location westeurope
+    az group create --name meridian-studio --location francecentral
     az identity create --resource-group meridian-studio --name marketplace-publisher
     ```
 
