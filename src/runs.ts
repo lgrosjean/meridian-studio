@@ -26,6 +26,7 @@ const secs = (v) => (typeof v === 'number' ? (Math.abs(v) < 60 ? v + ' s' : Math
 const signed = (f) => (d) => (d > 0 ? '+' : '') + f(d)
 // key, label, how a value reads, which way is better (1 up, -1 down, 0 neither), how a change reads
 const METRICS = [
+  ['health_score', 'health', (v) => num(v, 0), 1, signed((d) => num(d, 0))],
   ['r2', 'R²', num, 1, signed(num)],
   ['mape', 'MAPE', pct, -1, signed((d) => (d * 100).toFixed(1) + ' pt')],
   ['wmape', 'wMAPE', pct, -1, signed((d) => (d * 100).toFixed(1) + ' pt')],
@@ -42,7 +43,7 @@ function render() {
     + '<td><input type="checkbox" ' + (picked.includes(id(r)) ? 'checked' : '') + ' title="Compare"></td>'
     + '<td>' + esc(r.model) + (r.current ? ' <span class="tag">current</span>' : '') + '</td><td class="dim">' + esc(when(r.at)) + '</td>'
     + METRICS.map(([k, , f]) => '<td class="n">' + f(r.fit[k]) + '</td>').join('') + '</tr>').join('')
-    || '<tr><td colspan="9" class="dim">No runs yet: fit a model.</td></tr>'
+    || '<tr><td colspan="10" class="dim">No runs yet: fit a model.</td></tr>'
   compare()
 }
 function compare() {
@@ -111,7 +112,7 @@ export class RunsView implements vscode.WebviewViewProvider {
       <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'">
       <style>${STYLE}</style></head><body>
       <div class="bar"><select id="model"></select><span class="dim">Click a run for its results; tick two to compare.</span></div>
-      <table><thead><tr><th></th><th>Model</th><th>When</th><th class="n">R²</th><th class="n">MAPE</th><th class="n">wMAPE</th><th class="n">max r-hat</th><th class="n">divergences</th><th class="n">time</th></tr></thead>
+      <table><thead><tr><th></th><th>Model</th><th>When</th><th class="n">health</th><th class="n">R²</th><th class="n">MAPE</th><th class="n">wMAPE</th><th class="n">max r-hat</th><th class="n">divergences</th><th class="n">time</th></tr></thead>
       <tbody id="rows"></tbody></table>
       <h3>Compare</h3><div id="compare"></div>
       <script nonce="${nonce}">${SCRIPT}</script></body></html>`

@@ -84,10 +84,11 @@ function fingerprintOf(root: Root, name: string): string {
   const made = p && fs.existsSync(yamlOf(parent, p)) ? (parent === 'datasets' ? fingerprintOf(parent, p) : recordOf(parent, p)?.summary?.fingerprint) : undefined
   return sha(`${text}\n${String(made ?? 'nothing yet')}`)
 }
-/** The HTML Meridian wrote for a fit (in mlruns/) or an optimization (next to the scenario). */
-function reportOf(root: Root, name: string): string | undefined {
-  const r = readJson<{ mlflow?: { report?: string }; report?: string }>(join(project(), root, `${name}.result.json`))
-  const rel = root === 'models' ? r?.mlflow?.report : root === 'scenarios' ? r?.report : undefined
+/** The HTML Meridian wrote for a fit (in mlruns/) or an optimization (next to the scenario); or a fit's health card,
+ * Meridian's review of it. */
+function reportOf(root: Root, name: string, which: 'report' | 'health' = 'report'): string | undefined {
+  const r = readJson<{ mlflow?: { report?: string; health?: string }; report?: string }>(join(project(), root, `${name}.result.json`))
+  const rel = root === 'models' ? r?.mlflow?.[which] : root === 'scenarios' && which === 'report' ? r?.report : undefined
   const abs = rel && join(project(), rel)
   return abs && fs.existsSync(abs) ? abs : undefined
 }
@@ -170,24 +171,28 @@ function results(root: Root, name: string, reveal = true) {
   if (root === 'datasets') return
   const file = join(project(), root, `${name}.result.json`)
   const text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined
-  showResults(root, name, file, text, { report: () => openReport(root, name), mlflow: shown(() => openRun(resultOf(root, name), name)) }, reveal)
+  const health = root === 'models' ? () => openReport(root, name, 'health') : undefined
+  showResults(root, name, file, text, { report: () => openReport(root, name), mlflow: shown(() => openRun(resultOf(root, name), name)), health }, reveal)
 }
 /** A past fit's results, from its line in the index: its own panel, beside the latest one. */
 function showRun(name: string, r: PastRun) {
   const file = join(project(), 'models', `${name}.result.json`)
+  const open = (rel: string | undefined, what: string, title: string) => () => {
+    const abs = rel && join(project(), rel)
+    if (!abs || !fs.existsSync(abs)) return vscode.window.showErrorMessage(`Meridian's ${what} of this run is gone from mlruns/`)
+    showReport(`${title} · ${name} · ${when(r.at)}`, fs.readFileSync(abs, 'utf8'), abs)
+  }
   showResults('models', `${name} · ${when(r.at)}`, `${file}#${r.mlflow.run_id}`, JSON.stringify(r), {
-    report: () => {
-      const abs = join(project(), r.mlflow.report)
-      if (!fs.existsSync(abs)) return vscode.window.showErrorMessage(`Meridian's report of this run is gone from mlruns/`)
-      showReport(`Report · ${name} · ${when(r.at)}`, fs.readFileSync(abs, 'utf8'), abs)
-    },
-    mlflow: shown(() => openRun(r, name))
+    report: open(r.mlflow.report, 'report', 'Report'),
+    mlflow: shown(() => openRun(r, name)),
+    health: open(r.mlflow.health, 'health card', 'Health')
   })
 }
-function openReport(root: Root, name: string) {
-  const abs = reportOf(root, name)
-  if (!abs) return vscode.window.showErrorMessage(`${name}: Meridian's report is gone (deleted, or made on another machine)`)
-  showReport(`Report · ${name}`, fs.readFileSync(abs, 'utf8'), abs)
+function openReport(root: Root, name: string, which: 'report' | 'health' = 'report') {
+  const abs = reportOf(root, name, which)
+  const what = which === 'report' ? 'report' : 'health card'
+  if (!abs) return vscode.window.showErrorMessage(`${name}: Meridian's ${what} is gone (deleted, or made on another machine)`)
+  showReport(`${which === 'report' ? 'Report' : 'Health'} · ${name}`, fs.readFileSync(abs, 'utf8'), abs)
 }
 
 // --- The link above the file ------------------------------------------------------------------
@@ -311,7 +316,7 @@ const fixed = (v: unknown, d = 2) => (typeof v === 'number' ? v.toFixed(d) : Str
 const num = (v: unknown, d = 2) => (typeof v === 'number' ? v.toFixed(d) : '?')
 function summaryLine(root: Root, r: RunRecord): string {
   const s = r.summary ?? {}
-  if (root === 'models') return `r-hat ${num(s.r_hat_max)}, R² ${num(s.r2)}`
+  if (root === 'models') return `r-hat ${num(s.r_hat_max)}, R² ${num(s.r2)}${typeof s.health_score === 'number' ? `, health ${Math.round(s.health_score)}` : ''}`
   const roi = s.roi as { before?: number; after?: number } | undefined
   return `ROI ${num(roi?.before)} → ${num(roi?.after)}`
 }
@@ -430,7 +435,7 @@ function priorsOf(name: string): Prior[] {
 
 // A model's history, from <name>.runs.jsonl (one line per fit, written by the runner): newest first, the
 // one in <name>.result.json marked current. A click opens that run's results.
-export type PastRun = { at: string; config?: Record<string, unknown>; mlflow: { run_id: string; experiment_id?: string; report: string }; fit: Record<string, number> }
+export type PastRun = { at: string; config?: Record<string, unknown>; mlflow: { run_id: string; experiment_id?: string; report: string; health?: string }; fit: Record<string, number> }
 function runsOf(name: string): PastRun[] {
   const file = join(project(), 'models', `${name}.runs.jsonl`)
   if (!fs.existsSync(file)) return []
@@ -452,7 +457,7 @@ class Run extends vscode.TreeItem {
   ) {
     super(when(run.at))
     const f = run.fit ?? {}
-    this.description = [`R² ${fixed(f.r2)}`, `MAPE ${yes(f.mape) ? (f.mape * 100).toFixed(1) + '%' : '–'}`, yes(f.r_hat_max) ? `r-hat ${fixed(f.r_hat_max)}` : '', current ? 'current' : '']
+    this.description = [`R² ${fixed(f.r2)}`, `MAPE ${yes(f.mape) ? (f.mape * 100).toFixed(1) + '%' : '–'}`, yes(f.r_hat_max) ? `r-hat ${fixed(f.r_hat_max)}` : '', yes(f.health_score) ? `health ${Math.round(f.health_score)}` : '', current ? 'current' : '']
       .filter(Boolean)
       .join(' · ')
     this.iconPath = new vscode.ThemeIcon(current ? 'pass-filled' : 'circle-small-filled', current ? new vscode.ThemeColor('testing.iconPassed') : undefined)

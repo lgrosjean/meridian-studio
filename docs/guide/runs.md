@@ -2,7 +2,8 @@
 
 ## Meridian Runs
 
-**Meridian Runs**, a tab of the bottom panel, lists every fit of every model with its metrics. Click one for its
+**Meridian Runs**, a tab of the bottom panel, lists every fit of every model with its metrics, the health score of
+[Meridian's review](models.md#meridians-review) first. Click one for its
 results; tick two to compare them: their metrics, ROI by channel, and the configuration that differs.
 
 Each model's own runs are also under it in the sidebar; an [outdated](models.md#history-and-mlflow) one is flagged.

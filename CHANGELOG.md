@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Meridian's review of each fit**: once the posterior is sampled, Meridian's model health checks (convergence, a
+  negative baseline, the Bayesian p-value, goodness of fit, the shift from prior to posterior, ROI consistent with its
+  priors; with a revenue per KPI, implausible ROI, high-variance ROI and potential bias). Each passes, asks for a
+  review or fails; together they make a health score out of 100. The results panel lists them (**Model health**) and
+  opens Meridian's health card; what did not pass lands in Problems, on the lines naming its channels. A review that
+  breaks leaves the fit standing, and the panel says why it is missing.
+- The health score in the tree, the notification at the end of a fit and Meridian Runs; in MLflow, a metric
+  (`health_score`), each check's status a tag (`review.status`, `review.convergence`…), the health card an artifact.
+
 ## 0.1.2
 
 - **A documentation site**, [lgrosjean.github.io/meridian-studio](https://lgrosjean.github.io/meridian-studio/):

@@ -54,14 +54,15 @@ fs.writeFileSync(join(folder, 'models', 'm.yaml'), 'dataset: d\nmodel_spec: { me
 assert.deepEqual(_priorsOf('m').map((p) => [p.label, p.description]), [
   ['tv', 'mroi (default) · ROI 2.00 ± 1.00 (unused) · adstock TruncatedNormal(0.60, 0.20, 0.40, 0.85)'], ['radio', 'not a channel of the dataset']
 ])
-// A model's runs: newest first, a cut line skipped, the one in result.json marked current.
-const line = (at, id, r2) => JSON.stringify({ at, mlflow: { run_id: id, report: 'x.html' }, fit: { r2, mape: 0.05, r_hat_max: null } })
-fs.writeFileSync(join(folder, 'models', 'm.runs.jsonl'), [line('2026-10-01T10:00:00+00:00', 'a', 0.9), line('2026-10-02T10:00:00+00:00', 'b', 0.95), '{"at": "cut'].join('\n'))
+// A model's runs: newest first, a cut line skipped, the one in result.json marked current; the health score of
+// Meridian's review when the fit has one (fits before it have none).
+const line = (at, id, r2, health) => JSON.stringify({ at, mlflow: { run_id: id, report: 'x.html' }, fit: { r2, mape: 0.05, r_hat_max: null, ...(health && { health_score: health }) } })
+fs.writeFileSync(join(folder, 'models', 'm.runs.jsonl'), [line('2026-10-01T10:00:00+00:00', 'a', 0.9), line('2026-10-02T10:00:00+00:00', 'b', 0.95, 86.8), '{"at": "cut'].join('\n'))
 fs.writeFileSync(join(folder, 'models', 'm.result.json'), JSON.stringify({ mlflow: { run_id: 'a' } }))
 const [runs, priorsFolder] = _modelChildren('m')
 assert.deepEqual([runs.label, runs.description, priorsFolder.label], ['Runs', '2', 'Priors'])
 assert.deepEqual(_folderChildren(runs).map((r) => [r.command.arguments[1].mlflow.run_id, r.description]), [
-  ['b', 'R² 0.95 · MAPE 5.0%'], ['a', 'R² 0.90 · MAPE 5.0% · current']
+  ['b', 'R² 0.95 · MAPE 5.0% · health 87'], ['a', 'R² 0.90 · MAPE 5.0% · current']
 ])
 fs.rmSync(folder, { recursive: true })
 // The line naming a file: where its value sits, and the file it means.

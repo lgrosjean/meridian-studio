@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
+import review
 from loader import Fail, clean, channels_of, frame, input_data
 from tracking import cached, experiment, flat, local_path
 
@@ -232,13 +233,21 @@ def fit(project: Path, path: str, emit) -> dict:
         ]
         emit(event="phase", name="analysis", state="done")
 
+        emit(event="phase", name="review", state="run")
+        health, reviewed = review.safely(mmm)  # Meridian's health checks on the fit; its checks that did not pass to Problems
+        if review.items(reviewed):
+            emit(event="checks", items=review.items(reviewed))
+        if "health_score" in reviewed:
+            fit_block["health_score"] = reviewed["health_score"]
+        emit(event="phase", name="review", state="done")
+
         emit(event="phase", name="outputs", state="run")
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             mlflow.set_tags({
                 "studio.kind": "fit", "studio.project": str(project.resolve()), "studio.model": path, "studio.dataset": ds_path,
-                "studio.dataset_fingerprint": fingerprint, 
-            })
+                "studio.dataset_fingerprint": fingerprint,
+            } | review.tags(reviewed))
             mlflow.log_params(flat({
                 "model_spec": m.get("model_spec") or {}, "sampling": m.get("sampling") or {}, "priors": m.get("priors") or {},
             }))
@@ -250,6 +259,8 @@ def fit(project: Path, path: str, emit) -> dict:
             summarizer.Summarizer(mmm).output_model_results_summary(
                 "summary.html", str(tmp), sw.get("start") and str(sw["start"]), sw.get("end") and str(sw["end"])
             )
+            if health is not None:
+                health.output_model_health_card("health.html", str(tmp))  # the review as Meridian lays it out
             df.to_parquet(tmp / "dataset.parquet")
             (tmp / "model.yaml").write_text(m["_file"].read_text())
             (tmp / "dataset.yaml").write_text(d["_file"].read_text())
@@ -260,15 +271,18 @@ def fit(project: Path, path: str, emit) -> dict:
             if artifacts is None:  # in another store: a copy here of what the optimizer and the report read
                 artifacts = cached(project, run.info.run_id)
                 artifacts.mkdir(parents=True, exist_ok=True)
-                for f in ("model.binpb", "summary.html"):
-                    shutil.copy2(tmp / f, artifacts / f)
+                for f in ("model.binpb", "summary.html", "health.html"):
+                    if (tmp / f).exists():
+                        shutil.copy2(tmp / f, artifacts / f)
             rel = os.path.relpath(artifacts, project.resolve())
             result = {
                 "mlflow": {
                     "run_id": run.info.run_id, "experiment_id": run.info.experiment_id, "artifact_uri": uri,
                     "artifacts": rel, "report": f"{rel}/summary.html",
+                    **({"health": f"{rel}/health.html"} if health is not None else {}),
                 },
                 "fit": fit_block,
+                "review": reviewed,
                 "channels": rows,
                 "currency": d.get("currency_code"),
                 "dataset_fingerprint": fingerprint,

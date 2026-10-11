@@ -130,7 +130,28 @@ def data_checks(project: Path):
         (project / f).unlink()
 
 
+def review_breaks():
+    """A review that breaks leaves the fit standing: no score, why in its place, nothing in Problems nor in MLflow's tags."""
+    import contextlib
+    import io
+
+    sys.path.insert(0, str(HERE))
+    import review
+
+    class Broken:
+        def review(self):
+            raise RuntimeError("no posterior")
+
+    with contextlib.redirect_stderr(io.StringIO()) as err:  # the trace goes to the output, as a fit's would
+        summary, block = review.safely(Broken())
+    assert summary is None and block == {"error": "RuntimeError: no posterior"} and "Traceback" in err.getvalue(), block
+    assert review.items(block) == [] and review.tags(block) == {}
+    codes = [review.code_of(type(n, (), {})()) for n in ("ConvergenceCheckResult", "BayesianPPPCheckResult", "ROIConsistencyCheckResult", "ImplausibleROICheckResult")]
+    assert codes == ["CONVERGENCE", "BAYESIAN_PPP", "ROI_CONSISTENCY", "IMPLAUSIBLE_ROI"], codes
+
+
 def main():
+    review_breaks()
     with tempfile.TemporaryDirectory() as tmp:
         project = Path(tmp) / "project"
         shutil.copytree(HERE.parent / "examples", project, ignore=shutil.ignore_patterns("mlruns", "mlflow.db", "*.result.json", "*.run.json", "*.runs.jsonl", "*.html"))
@@ -180,11 +201,21 @@ def main():
         code, ev = run("fit", str(project), "models/tiny.yaml")
         assert code == 0, ev
         r = json.loads((project / "models/tiny.result.json").read_text(), parse_constant=refuse)
-        assert set(r) == {"mlflow", "fit", "channels", "currency", "dataset_fingerprint"}, r
+        assert set(r) == {"mlflow", "fit", "channels", "currency", "dataset_fingerprint", "review"}, r
         assert r["dataset_fingerprint"].startswith("sha256:") and ev[-1]["summary"]["fingerprint"] == r["mlflow"]["run_id"]
         assert all(c["roi_lo"] <= c["roi"] <= c["roi_hi"] for c in r["channels"]), r["channels"]
         assert (project / r["mlflow"]["report"]).exists() and (project / r["mlflow"]["artifacts"] / "model.binpb").exists()
         assert "mlruns/" in (project / ".gitignore").read_text()
+        # Meridian's review of the fit: every check and its status, the health score among the fit's metrics, the checks
+        # that did not pass in Problems (as the checks event places them), the health card beside the report.
+        rv = r["review"]
+        assert rv["status"] in ("pass", "fail") and 0 <= rv["health_score"] <= 100 and r["fit"]["health_score"] == rv["health_score"], rv
+        codes = [c["code"] for c in rv["checks"]]
+        assert codes[0] == "CONVERGENCE" and {"BASELINE", "BAYESIAN_PPP", "GOODNESS_OF_FIT"} <= set(codes), codes
+        assert all(c["status"] in ("pass", "review", "fail") and c["title"] and c["text"] and set(c["channels"]) <= {"ch0", "ch1", "ch2", "ch3"} for c in rv["checks"]), rv
+        flagged = [i for e in ev if e["event"] == "checks" for i in e["items"] if i["code"] in codes]
+        assert flagged == [{"status": c["status"], "code": c["code"], "title": c["title"], "text": c["text"], "vars": c["channels"]} for c in rv["checks"] if c["status"] != "pass"], flagged
+        assert (project / r["mlflow"]["health"]).exists() and ev[-1]["summary"]["health_score"] == rv["health_score"], r["mlflow"]
         runs = [json.loads(l, parse_constant=refuse) for l in (project / "models/tiny.runs.jsonl").read_text().splitlines()]
         assert len(runs) == 1 and runs[0]["mlflow"]["run_id"] == r["mlflow"]["run_id"], runs
         assert runs[0]["config"]["priors"]["roi_m"]["ch1"] == {"mean": 2, "sd": 1} and runs[0]["at"].endswith("+00:00"), runs[0]
@@ -200,6 +231,9 @@ def main():
         assert tags["owner"] == "ci" and tags["ticket"] == "42" and tags["mlflow.note.content"] == "Tiny, for the tests" and tags["studio.model"] == "models/tiny.yaml", tags
         assert params["model_spec.max_lag"] == params["spec.max_lag"] == "4" and params["sample_posterior.n_keep"] == "50" and "meridian_version" in params, params
         assert tags["studio.kind"] == "fit" and r["mlflow"]["experiment_id"] == logged[0].info.experiment_id and r["mlflow"]["artifact_uri"].startswith("file://"), r["mlflow"]
+        # The review: its score a metric, its statuses tags to search runs by, its health card an artifact.
+        assert logged[0].data.metrics["health_score"] == rv["health_score"] and tags["review.status"] == rv["status"] and tags["review.convergence"] == rv["checks"][0]["status"], tags
+        assert {"health.html", "summary.html", "model.binpb"} <= {a.path for a in client.list_artifacts(r["mlflow"]["run_id"])}
         # Its input: the dataset, as fitted, from its CSV.
         inputs = logged[0].inputs.dataset_inputs
         assert [(i.dataset.name, [t.value for t in i.tags]) for i in inputs] == [("synthetic", ["training"])] and "national_media.csv" in inputs[0].dataset.source, inputs
@@ -280,7 +314,7 @@ def team(tmp: Path, model: str):
         assert code == 0, ev
         r = json.loads((project / "models/tiny.result.json").read_text())["mlflow"]
         assert r["artifact_uri"].startswith("mlflow-artifacts:") and r["artifacts"] == f"mlruns/{r['run_id']}/artifacts", r
-        assert sorted(f.name for f in (project / r["artifacts"]).iterdir()) == ["model.binpb", "summary.html"]
+        assert sorted(f.name for f in (project / r["artifacts"]).iterdir()) == ["health.html", "model.binpb", "summary.html"]
         assert not (project / "mlflow.db").exists() and any((tmp / "store").rglob("model.binpb"))
 
         shutil.rmtree(project / "mlruns")

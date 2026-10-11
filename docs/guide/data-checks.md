@@ -67,3 +67,9 @@ the model and in its dataset.
 first: **Show Problems**, or **Fit anyway**. A fit from a [task](runs.md#tasks) asks the same.
 
 The same checks run without VS Code, on every pull request: [Checks in CI](ci.md).
+
+## After a fit
+
+Once the fit is sampled, Meridian reviews it: convergence, the baseline, goodness of fit, priors the data did not
+move, implausible ROI… What did not pass lands in Problems too, on the lines naming its channels:
+[Meridian's review](models.md#meridians-review).
