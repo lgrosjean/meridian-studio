@@ -90,8 +90,9 @@ jobs:
       - name: The identity's ID, a member of the publisher, and its rights
         if: github.event_name == 'workflow_dispatch'
         run: |
-          az rest --url 'https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1-preview.3' \
-            --resource 499b84ac-1321-427f-aa17-267ca6975798 --query id --output tsv
+          # its Azure DevOps identity: connectionData, as an identity has no profile (profiles/me: VSS011031)
+          az rest --url 'https://app.vssps.visualstudio.com/_apis/connectionData' \
+            --resource 499b84ac-1321-427f-aa17-267ca6975798 --query authenticatedUser.id --output tsv
           bunx vsce verify-pat "$(jq -r .publisher package.json)" --azure-credential
       - name: Publish to the Marketplace
         if: github.event_name == 'push'
