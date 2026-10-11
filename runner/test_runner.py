@@ -4,9 +4,13 @@ Run: uv run --project runner runner/test_runner.py   (a minute or two on CPU)"""
 import json
 import os
 import shutil
+import signal
+import socket
 import subprocess
 import sys
 import tempfile
+import time
+import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -195,6 +199,10 @@ def main():
         assert info.status == "FINISHED" and info.run_name == "tiny on synthetic", info
         assert tags["owner"] == "ci" and tags["ticket"] == "42" and tags["mlflow.note.content"] == "Tiny, for the tests" and tags["studio.model"] == "models/tiny.yaml", tags
         assert params["model_spec.max_lag"] == params["spec.max_lag"] == "4" and params["sample_posterior.n_keep"] == "50" and "meridian_version" in params, params
+        assert tags["studio.kind"] == "fit" and r["mlflow"]["experiment_id"] == logged[0].info.experiment_id and r["mlflow"]["artifact_uri"].startswith("file://"), r["mlflow"]
+        # Its input: the dataset, as fitted, from its CSV.
+        inputs = logged[0].inputs.dataset_inputs
+        assert [(i.dataset.name, [t.value for t in i.tags]) for i in inputs] == [("synthetic", ["training"])] and "national_media.csv" in inputs[0].dataset.source, inputs
 
         (project / "scenarios/tiny-plus-10.yaml").write_text(
             "model: tiny\nbudget: +10%\nbounds: { lower: 0.3, upper: 0.3 }\nchannels: { ch0: { lower: 0.1, upper: 0.5 } }\n"
@@ -210,7 +218,83 @@ def main():
         (project / "scenarios/bad.yaml").write_text("model: tiny\nbudget: lots\n")
         code, ev = run("optimize", str(project), "scenarios/bad.yaml")
         assert code == 1 and "+10%" in ev[-1]["message"], ev
+        # The optimization is a run under the fit's (the bad scenario, refused before it starts, made none).
+        scenario = client.get_run(o["mlflow"]["run_id"])
+        assert len(client.search_runs([scenario.info.experiment_id], "tags.`studio.kind` = 'scenario'")) == 1
+        assert scenario.data.tags["mlflow.parentRunId"] == r["mlflow"]["run_id"] and scenario.info.run_name == "tiny-plus-10", scenario.data.tags
+        assert scenario.data.params["budget"] == "+10%" and scenario.data.params["channels.ch0.lower"] == "0.1", scenario.data.params
+        assert abs(scenario.data.metrics["budget.after"] - b["after"]) < 1 and "spend_after.ch0" in scenario.data.metrics, scenario.data.metrics
+        assert {a.path for a in client.list_artifacts(scenario.info.run_id)} == {"tiny-plus-10.html", "scenario.yaml", "result.json"}
+
+        artifact_location(Path(tmp))
+        team(Path(tmp), good)
     print("ok")
+
+
+def artifact_location(tmp: Path):
+    """A new experiment's files go where MERIDIAN_MLFLOW_ARTIFACT_LOCATION says; else, in the project's store, mlruns/."""
+    import tracking
+
+    for name, where in (("default", None), ("elsewhere", tmp / "files")):
+        (tmp / name).mkdir()
+        os.environ.pop(tracking.ARTIFACTS, None)
+        if where:
+            os.environ[tracking.ARTIFACTS] = str(where)
+        try:
+            exp = tracking.experiment(tmp / name)
+        finally:
+            os.environ.pop(tracking.ARTIFACTS, None)
+        assert tracking.local_path(exp.artifact_location).resolve() == (where or tmp / name / "mlruns").resolve(), exp.artifact_location
+
+
+def team(tmp: Path, model: str):
+    """A tracking server keeping the runs' files itself, as a team's does: the fit's go to it, the project keeps a copy of
+    its model and report, and the optimizer gets the model back from the server once that copy is gone."""
+    import mlflow
+
+    project = tmp / "team"
+    shutil.copytree(HERE.parent / "examples", project, ignore=shutil.ignore_patterns("mlruns", "mlflow.db", "*.result.json", "*.run.json", "*.runs.jsonl", "*.html"))
+    (project / "models/tiny.yaml").write_text(model)
+    (project / "scenarios/tiny-plus-10.yaml").write_text("model: tiny\nbudget: +10%\n")
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    url = f"http://127.0.0.1:{port}"
+    server = subprocess.Popen(
+        [str(Path(sys.executable).parent / "mlflow"), "server", "--backend-store-uri", f"sqlite:///{tmp / 'server.db'}",
+         "--artifacts-destination", str(tmp / "store"), "--host", "127.0.0.1", "--port", str(port), "--workers", "1"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,  # uvicorn under mlflow: stopped together
+    )
+    os.environ["MLFLOW_TRACKING_URI"] = url  # the runner's, as the extension's setting gives it
+    try:
+        for _ in range(240):
+            try:
+                if urllib.request.urlopen(f"{url}/health", timeout=1).status == 200:
+                    break
+            except OSError:
+                time.sleep(0.25)
+        else:
+            raise AssertionError("MLflow's server did not start")
+
+        code, ev = run("fit", str(project), "models/tiny.yaml")
+        assert code == 0, ev
+        r = json.loads((project / "models/tiny.result.json").read_text())["mlflow"]
+        assert r["artifact_uri"].startswith("mlflow-artifacts:") and r["artifacts"] == f"mlruns/{r['run_id']}/artifacts", r
+        assert sorted(f.name for f in (project / r["artifacts"]).iterdir()) == ["model.binpb", "summary.html"]
+        assert not (project / "mlflow.db").exists() and any((tmp / "store").rglob("model.binpb"))
+
+        shutil.rmtree(project / "mlruns")
+        code, ev = run("optimize", str(project), "scenarios/tiny-plus-10.yaml")
+        assert code == 0 and (project / r["artifacts"] / "model.binpb").exists(), ev
+        o = json.loads((project / "scenarios/tiny-plus-10.result.json").read_text())["mlflow"]
+        assert mlflow.MlflowClient(url).get_run(o["run_id"]).data.tags["mlflow.parentRunId"] == r["run_id"]
+    finally:
+        os.environ.pop("MLFLOW_TRACKING_URI", None)
+        os.killpg(server.pid, signal.SIGTERM)
+        try:
+            server.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            os.killpg(server.pid, signal.SIGKILL)
 
 
 if __name__ == "__main__":

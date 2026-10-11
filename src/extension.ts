@@ -13,6 +13,7 @@ import { completeDataset, registerAssist, setRole } from './assist'
 import { profileOf } from './csv'
 import { registerDataChecks, runQuietly } from './datachecks'
 import { ROLES, complete, isPlaceholder, readDataset, summarize } from './dataset'
+import { mlflowEnv, openMlflow, stopMlflow } from './mlflow'
 import { openPanels, showReport, showResults } from './results'
 import { RunsView, type RunRow } from './runs'
 
@@ -152,20 +153,35 @@ async function ensureUv(out: vscode.OutputChannel): Promise<string> {
   }
 }
 
+// --- MLflow's UI, on a run --------------------------------------------------------------------
+
+type Logged = { mlflow?: { run_id?: string; experiment_id?: string } }
+let mlflowCtx: Parameters<typeof openMlflow>[0] | undefined // set on activation
+const resultOf = (root: Root, name: string) => readJson<Logged>(join(project(), root, `${name}.result.json`))
+/** A run's page in MLflow: a model's or a scenario's latest, or a past fit. */
+async function openRun(r: Logged | undefined, what: string) {
+  if (!r?.mlflow?.run_id) throw new Error(`${what}: no MLflow run yet`)
+  await openMlflow(mlflowCtx!, { run: r.mlflow.run_id, experiment: r.mlflow.experiment_id })
+}
+const shown = (f: () => Promise<unknown>) => () => void f().catch((e) => vscode.window.showErrorMessage(e instanceof Error ? e.message : String(e)))
+
 /** The results panel of a model or a scenario, opened beside the editor (reveal) or only refreshed if open. */
 function results(root: Root, name: string, reveal = true) {
   if (root === 'datasets') return
   const file = join(project(), root, `${name}.result.json`)
   const text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined
-  showResults(root, name, file, text, () => openReport(root, name), reveal)
+  showResults(root, name, file, text, { report: () => openReport(root, name), mlflow: shown(() => openRun(resultOf(root, name), name)) }, reveal)
 }
 /** A past fit's results, from its line in the index: its own panel, beside the latest one. */
 function showRun(name: string, r: PastRun) {
   const file = join(project(), 'models', `${name}.result.json`)
-  showResults('models', `${name} · ${when(r.at)}`, `${file}#${r.mlflow.run_id}`, JSON.stringify(r), () => {
-    const abs = join(project(), r.mlflow.report)
-    if (!fs.existsSync(abs)) return vscode.window.showErrorMessage(`Meridian's report of this run is gone from mlruns/`)
-    showReport(`Report · ${name} · ${when(r.at)}`, fs.readFileSync(abs, 'utf8'), abs)
+  showResults('models', `${name} · ${when(r.at)}`, `${file}#${r.mlflow.run_id}`, JSON.stringify(r), {
+    report: () => {
+      const abs = join(project(), r.mlflow.report)
+      if (!fs.existsSync(abs)) return vscode.window.showErrorMessage(`Meridian's report of this run is gone from mlruns/`)
+      showReport(`Report · ${name} · ${when(r.at)}`, fs.readFileSync(abs, 'utf8'), abs)
+    },
+    mlflow: shown(() => openRun(r, name))
   })
 }
 function openReport(root: Root, name: string) {
@@ -414,7 +430,7 @@ function priorsOf(name: string): Prior[] {
 
 // A model's history, from <name>.runs.jsonl (one line per fit, written by the runner): newest first, the
 // one in <name>.result.json marked current. A click opens that run's results.
-export type PastRun = { at: string; config?: Record<string, unknown>; mlflow: { run_id: string; report: string }; fit: Record<string, number> }
+export type PastRun = { at: string; config?: Record<string, unknown>; mlflow: { run_id: string; experiment_id?: string; report: string }; fit: Record<string, number> }
 function runsOf(name: string): PastRun[] {
   const file = join(project(), 'models', `${name}.runs.jsonl`)
   if (!fs.existsSync(file)) return []
@@ -429,15 +445,20 @@ function runsOf(name: string): PastRun[] {
 }
 const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 class Run extends vscode.TreeItem {
-  constructor(name: string, r: PastRun, current: boolean) {
-    super(when(r.at))
-    const f = r.fit ?? {}
+  constructor(
+    public model: string,
+    public run: PastRun,
+    current: boolean
+  ) {
+    super(when(run.at))
+    const f = run.fit ?? {}
     this.description = [`R² ${fixed(f.r2)}`, `MAPE ${yes(f.mape) ? (f.mape * 100).toFixed(1) + '%' : '–'}`, yes(f.r_hat_max) ? `r-hat ${fixed(f.r_hat_max)}` : '', current ? 'current' : '']
       .filter(Boolean)
       .join(' · ')
     this.iconPath = new vscode.ThemeIcon(current ? 'pass-filled' : 'circle-small-filled', current ? new vscode.ThemeColor('testing.iconPassed') : undefined)
-    this.tooltip = `MLflow run ${r.mlflow.run_id}`
-    this.command = { command: 'meridian.showRun', title: 'Show results', arguments: [name, r] }
+    this.tooltip = `MLflow run ${run.mlflow.run_id}`
+    this.contextValue = 'run'
+    this.command = { command: 'meridian.showRun', title: 'Show results', arguments: [model, run] }
   }
 }
 class Folder extends vscode.TreeItem {
@@ -585,8 +606,7 @@ async function run(runner: string, out: vscode.OutputChannel, problems: vscode.D
   const ref = referenceIn(fs.readFileSync(uri.fsPath, 'utf8'), root, dir)
   if (ref?.kind === 'dataset') problems.delete(vscode.Uri.file(ref.file))
 
-  const mlflow = vscode.workspace.getConfiguration('meridian').get<string>('mlflowTrackingUri')?.trim()
-  const env = { ...process.env, PYTHONUNBUFFERED: '1', ...(mlflow && { MLFLOW_TRACKING_URI: mlflow }) }
+  const env = { ...process.env, PYTHONUNBUFFERED: '1', ...mlflowEnv() }
   const args = ['run', '--project', runner, join(runner, 'runner.py'), kind.command!, dir, `${root}/${name}.yaml`]
   if (!term) out.show(true)
   say(`\n$ uv ${args.join(' ')}`)
@@ -839,6 +859,7 @@ export function activate(context: vscode.ExtensionContext) {
   const runner = join(context.extensionPath, 'runner')
   storage = context.globalStorageUri.fsPath
   const out = vscode.window.createOutputChannel('Meridian Studio')
+  mlflowCtx = { project, runner, uv: () => ensureUv(out), out }
   const problems = vscode.languages.createDiagnosticCollection('meridian')
   const trees = Object.fromEntries(ROOTS.map((r) => [r, new Tree(r)])) as Record<Root, Tree>
   status = vscode.window.createStatusBarItem('meridian.run', vscode.StatusBarAlignment.Left, 50)
@@ -953,12 +974,20 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('meridian.results', guarded((i: Item) => results(i.root, i.name))),
     vscode.commands.registerCommand('meridian.showRun', guarded(showRun)),
     vscode.commands.registerCommand('meridian.output', () => out.show(true)),
+    vscode.commands.registerCommand('meridian.openMlflow', guarded(async (a?: Item | Run) => {
+      if (a instanceof Run) return openRun(a.run, a.model)
+      if (a instanceof Item) return openRun(resultOf(a.root, a.name), a.name)
+      // From the palette: the project's experiment, as any fit names it.
+      const experiment = new Tree('models').list().map((i) => resultOf('models', i.name)?.mlflow?.experiment_id).find(Boolean)
+      return openMlflow(mlflowCtx!, { experiment })
+    })),
     vscode.languages.registerCodeLensProvider({ language: 'yaml', scheme: 'file' }, lenses),
     vscode.languages.registerDefinitionProvider({ language: 'yaml', scheme: 'file' }, definitions),
     vscode.commands.registerCommand('meridian.newDataset', guarded(() => create(join(runner, 'templates'), 'datasets'))),
     vscode.commands.registerCommand('meridian.newModel', guarded(() => create(join(runner, 'templates'), 'models'))),
     vscode.commands.registerCommand('meridian.newScenario', guarded(() => create(join(runner, 'templates'), 'scenarios'))),
-    { dispose: () => children.forEach((c) => c.kill()) } // a record left at Running reads as interrupted next time
+    { dispose: () => children.forEach((c) => c.kill()) }, // a record left at Running reads as interrupted next time
+    { dispose: stopMlflow }
   )
 }
 

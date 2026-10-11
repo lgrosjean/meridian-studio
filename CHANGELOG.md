@@ -9,6 +9,13 @@
   resolved them, the sampling's arguments), and an optional `mlflow:` block in a model: its runs' name (`{model}`,
   `{dataset}`), description and tags, autologging off. The run opens before Meridian is built, not after the fit:
   a fit that fails while sampling shows as FAILED, and the run lasts as long as the fit.
+- **MLflow's runs and files apart**: with a tracking server, a fit's files go to the server's artifact store, no
+  longer to the project's `mlruns/`, which keeps a copy of the model and the report; the optimizer fetches the model
+  from MLflow when that copy is gone. `meridian.mlflowArtifactLocation` sets where a new experiment keeps its files.
+- **Open MLflow**: MLflow's UI on the experiment, a fit or a scenario; a local `mlflow server` when the store is the
+  project's. From the palette, the Models view, a model, a scenario, a past run, or the results panel.
+- The fit's run declares its dataset as input (MLflow's Datasets); each optimization is a run under its fit's, with
+  the scenario as params, budget, outcome and ROI before and after as metrics, Meridian's summary as an artifact.
 - **Data checks**, like a linter's: each CSV checked by the role of its columns, each finding with a code, in
   Problems on the line naming its column and counted above the file. T001–T003 the dates (weeks missing, off the
   step, different per geo), K001–K002 the KPI (empty after it starts, negative), M001–M003 the channels (negative,
