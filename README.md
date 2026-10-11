@@ -209,6 +209,10 @@ a list, `github` annotations. A model's checks (Meridian's) need the runner's ow
 
 - `bun install`, then F5 opens `examples/` with the extension loaded.
 - `bun run test`: type check, bundle, the tree's logic, then the runner (fits the example tiny, optimizes it).
+- `bun run test:vscode`: the extension in a real VS Code with the YAML extension (both downloaded into `.vscode-test/`
+  the first time; on Linux without a display, `xvfb-run -a bun run test:vscode`). Its data checks part needs
+  `uv sync --project runner`.
+- CI (`.github/workflows/test.yml`) runs both on every push.
 - `bun run build && HOME=$(mktemp -d) PATH=/usr/bin:/bin $(which node) scripts/check-uv.js` checks the uv
   install (downloads uv).
 - `uv run --project runner scripts/gen_priors_schema.py` rewrites the priors part of the model schema from the

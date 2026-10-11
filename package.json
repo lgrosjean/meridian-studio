@@ -322,11 +322,13 @@
     "vscode:prepublish": "bun run build",
     "package": "vsce package --no-dependencies",
     "publish": "vsce publish --no-dependencies",
-    "test": "bun run typecheck && bun run build && node scripts/check-columns.js && uv run --project runner runner/test_runner.py"
+    "test": "bun run typecheck && bun run build && node scripts/check-columns.js && uv run --project runner runner/test_runner.py",
+    "test:vscode": "bun run build && node test/vscode/run.js"
   },
   "devDependencies": {
     "@types/node": "^22",
     "@types/vscode": "^1.100.0",
+    "@vscode/test-electron": "^2.4.1",
     "@vscode/vsce": "^3",
     "typescript": "^5"
   },
