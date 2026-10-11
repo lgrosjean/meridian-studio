@@ -1,0 +1,72 @@
+# The documentation site, built by Zensical (bun run docs, bun run docs:build) and published to GitHub Pages by
+# .github/workflows/docs.yml. MkDocs' format, which Zensical reads as it is.
+site_name: Meridian Studio
+site_description: Marketing mix models as code. Google Meridian's datasets, models and budget scenarios as YAML, fitted and optimized from VS Code or Cursor.
+site_url: https://lgrosjean.github.io/meridian-studio/
+repo_url: https://github.com/lgrosjean/meridian-studio
+repo_name: lgrosjean/meridian-studio
+edit_uri: edit/main/docs/
+copyright: Unofficial community project, not affiliated with Google. Meridian is a trademark of Google LLC.
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Guide:
+      - Datasets: guide/datasets.md
+      - Data checks: guide/data-checks.md
+      - Models and fits: guide/models.md
+      - Budget scenarios: guide/scenarios.md
+      - Runs and tasks: guide/runs.md
+      - Checks in CI: guide/ci.md
+  - Reference:
+      - Dataset YAML: reference/dataset.md
+      - Model YAML: reference/model.md
+      - Scenario YAML: reference/scenario.md
+      - Commands and settings: reference/commands.md
+  - Development: development.md
+  - Changelog: changelog.md
+
+theme:
+  name: material
+  language: en
+  icon:
+    logo: lucide/chart-no-axes-combined
+    repo: fontawesome/brands/github
+  features:
+    - content.action.edit
+    - content.code.annotate
+    - content.code.copy
+    - content.tabs.link
+    - navigation.footer
+    - navigation.indexes
+    - navigation.instant
+    - navigation.path
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - search.highlight
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle: { icon: lucide/sun-moon, name: Switch to light mode }
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle: { icon: lucide/sun, name: Switch to dark mode }
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle: { icon: lucide/moon, name: Switch to system preference }
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - md_in_html
+  - tables
+  - toc: { permalink: true }
+  - pymdownx.details
+  - pymdownx.highlight: { anchor_linenums: true, line_spans: __span, pygments_lang_class: true }
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.snippets: { base_path: ["."], check_paths: true }
+  - pymdownx.superfences
+  - pymdownx.tabbed: { alternate_style: true }

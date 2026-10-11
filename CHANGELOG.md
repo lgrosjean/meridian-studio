@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **A documentation site**, [lgrosjean.github.io/meridian-studio](https://lgrosjean.github.io/meridian-studio/):
+  getting started, a guide to datasets, data checks, models, scenarios, runs and CI, and a reference of every YAML
+  key, command and setting.
 - **Data checks**, like a linter's: each CSV checked by the role of its columns, each finding with a code, in
   Problems on the line naming its column and counted above the file. T001–T003 the dates (weeks missing, off the
   step, different per geo), K001–K002 the KPI (empty after it starts, negative), M001–M003 the channels (negative,

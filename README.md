@@ -10,6 +10,8 @@ Marketing mix models as code. Run [Google Meridian](https://github.com/google/me
 datasets, models and budget scenarios are YAML files in your repo, fitted and optimized from the sidebar, tracked
 in MLflow.
 
+**Documentation: [lgrosjean.github.io/meridian-studio](https://lgrosjean.github.io/meridian-studio/)**
+
 ![A model open in VS Code: the Meridian sidebar with the dataset's columns and roles, the model's runs; the YAML with ▶ Fit above it; the fit's results beside](media/screenshots/model.png)
 
 ![A budget scenario: its YAML with ▶ Optimize above it, and the spend by channel before and after Meridian's optimizer](media/screenshots/scenario.png)
@@ -215,6 +217,9 @@ a list, `github` annotations. A model's checks (Meridian's) need the runner's ow
   the first time; on Linux without a display, `xvfb-run -a bun run test:vscode`). Its data checks part needs
   `uv sync --project runner`.
 - CI (`.github/workflows/test.yml`) runs both on every push.
+- `bun run docs` serves the documentation site (`docs/`, built by [Zensical](https://zensical.org)) at
+  http://localhost:8000; `bun run docs:build` builds it, failing on a broken link or an undocumented key. It is
+  published to GitHub Pages from `main` (`.github/workflows/docs.yml`).
 - `bun run build && HOME=$(mktemp -d) PATH=/usr/bin:/bin $(which node) scripts/check-uv.js` checks the uv
   install (downloads uv).
 - `uv run --project runner scripts/gen_priors_schema.py` rewrites the priors part of the model schema from the
