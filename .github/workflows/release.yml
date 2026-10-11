@@ -3,8 +3,9 @@
 # the suffix picks the channel, not the number: each publication has its own X.Y.Z. The .vsix goes on the tag's
 # GitHub release.
 # No token: the job signs in to Microsoft Entra ID as a managed identity that trusts this repository's `marketplace`
-# environment (GitHub's OIDC), and vsce publishes as that identity. Run by hand, it publishes nothing: it packages,
-# prints what the setup needs (the OIDC subject, the identity's ID) and checks the identity's rights on the publisher.
+# environment (GitHub's OIDC), and vsce publishes as that identity. Run by hand with a tag, it tags the commit it runs
+# on and publishes it, as a pushed tag would (no git needed). Without one, it publishes nothing: it packages, prints
+# what the setup needs (the OIDC subject, the identity's ID) and checks the identity's rights on the publisher.
 # Setup: docs/development.md, Releases.
 name: release
 on:
@@ -13,6 +14,11 @@ on:
       - 'v[0-9]+.[0-9]+.[0-9]+'
       - 'v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'The version to tag on this commit and publish: v0.4.0, v0.3.0-rc.1. Empty: a dry run'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -25,6 +31,7 @@ jobs:
   version:
     runs-on: ubuntu-latest
     outputs:
+      tag: ${{ steps.version.outputs.tag }}
       version: ${{ steps.version.outputs.version }}
       pre-release: ${{ steps.version.outputs.pre-release }}
     steps:
@@ -34,13 +41,19 @@ jobs:
           sparse-checkout-cone-mode: false
       - id: version
         name: The tag against package.json and the Marketplace
+        env:
+          TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }} # empty: a dry run
         run: |
           version=$(jq -r .version package.json)
           id=$(jq -r '.publisher + "." + .name' package.json)
-          if [ "$GITHUB_REF_TYPE" = tag ]; then
-            tagged=${GITHUB_REF_NAME#v}
+          if [ -n "$TAG" ]; then
+            if ! [[ $TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
+              echo "::error::$TAG: a tag is vX.Y.Z, or vX.Y.Z-rc.N for a pre-release"
+              exit 1
+            fi
+            tagged=${TAG#v}
             if [ "${tagged%-rc.*}" != "$version" ]; then
-              echo "::error::$GITHUB_REF_NAME, but package.json says $version: set the version in package.json, then tag that commit"
+              echo "::error::$TAG, but package.json says $version: set the version in package.json, then tag that commit"
               exit 1
             fi
             curl -sSf -X POST https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery \
@@ -52,10 +65,12 @@ jobs:
               exit 1
             fi
           fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          case $GITHUB_REF_NAME in *-rc.*) pre=true ;; *) pre=false ;; esac
+          case $TAG in *-rc.*) pre=true ;; *) pre=false ;; esac
           echo "pre-release=$pre" >> "$GITHUB_OUTPUT"
-          echo "$id $version, $([ $pre = true ] && echo pre-release || echo release)"
+          if [ -z "$TAG" ]; then what='a dry run'; elif [ $pre = true ]; then what='pre-release'; else what='release'; fi
+          echo "$id $version, $what"
 
   tests:
     needs: version
@@ -66,9 +81,10 @@ jobs:
     runs-on: ubuntu-latest
     environment: marketplace # the federated credential trusts this environment only
     permissions:
-      contents: write # the GitHub release
+      contents: write # the tag when run by hand, the GitHub release
       id-token: write # GitHub's OIDC token, exchanged for Entra ID's
     env:
+      TAG: ${{ needs.version.outputs.tag }} # empty for a dry run
       VERSION: ${{ needs.version.outputs.version }}
       VSIX: meridian-studio-${{ needs.version.outputs.version }}.vsix
       PRE_RELEASE: ${{ needs.version.outputs.pre-release == 'true' && 'true' || '' }} # empty for a release
@@ -78,7 +94,7 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bunx vsce package --no-dependencies ${PRE_RELEASE:+--pre-release} --out "$VSIX"
       - name: The subject the federated credential must name
-        if: github.event_name == 'workflow_dispatch'
+        if: needs.version.outputs.tag == ''
         run: |
           curl -sSf -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" \
             | node -e 'const t = JSON.parse(require("fs").readFileSync(0)).value; console.log(JSON.parse(Buffer.from(t.split(".")[1], "base64url")).sub)'
@@ -88,21 +104,25 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           allow-no-subscriptions: true
       - name: The identity's ID, a member of the publisher, and its rights
-        if: github.event_name == 'workflow_dispatch'
+        if: needs.version.outputs.tag == ''
         run: |
           # its Azure DevOps identity: connectionData, as an identity has no profile (profiles/me: VSS011031)
           az rest --url 'https://app.vssps.visualstudio.com/_apis/connectionData' \
             --resource 499b84ac-1321-427f-aa17-267ca6975798 --query authenticatedUser.id --output tsv
           bunx vsce verify-pat "$(jq -r .publisher package.json)" --azure-credential
+      - name: The tag, run by hand with one
+        if: github.event_name == 'workflow_dispatch' && needs.version.outputs.tag != ''
+        # the workflow's token: the tag starts no other run, this one publishes it
+        run: git tag "$TAG" && git push origin "$TAG"
       - name: Publish to the Marketplace
-        if: github.event_name == 'push'
+        if: needs.version.outputs.tag != ''
         # --skip-duplicate: this job run again, once published; the version job stopped any other duplicate
         run: bunx vsce publish --azure-credential --packagePath "$VSIX" ${PRE_RELEASE:+--pre-release} --skip-duplicate
       - name: The GitHub release, with the .vsix
-        if: github.event_name == 'push'
+        if: needs.version.outputs.tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           awk -v head="## $VERSION" '$0 == head { on = 1; next } /^## / { on = 0 } on' CHANGELOG.md > notes.md
           if [ -s notes.md ]; then notes=(--notes-file notes.md); else notes=(--generate-notes); fi
-          gh release create "$GITHUB_REF_NAME" "$VSIX" --verify-tag --title "$GITHUB_REF_NAME" ${PRE_RELEASE:+--prerelease} "${notes[@]}"
+          gh release create "$TAG" "$VSIX" --verify-tag --title "$TAG" ${PRE_RELEASE:+--prerelease} "${notes[@]}"

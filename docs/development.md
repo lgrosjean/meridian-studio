@@ -56,6 +56,9 @@ git tag v0.3.0-rc.1
 git push origin v0.3.0-rc.1
 ```
 
+Or without git: Actions › release › Run workflow, on `main`, the tag in its field. The workflow tags the commit it
+runs on, then publishes it in the same run. Left empty, the field makes a dry run.
+
 ### Signing in to the Marketplace
 
 No token: the workflow signs in to Microsoft Entra ID as a managed identity that trusts the repository's
@@ -90,9 +93,9 @@ No token: the workflow signs in to Microsoft Entra ID as a managed identity that
     az account show --query tenantId --output tsv
     ```
 
-4. **A dry run**: Actions › release › Run workflow, on `main`. It runs the tests and packages, prints the subject
-   GitHub signs (step 2's), signs in, prints the identity's ID and checks its rights on the publisher, and publishes
-   nothing. The first time, the check fails: add that ID to the publisher's members
+4. **A dry run**: Actions › release › Run workflow, on `main`, the tag left empty. It runs the tests and packages,
+   prints the subject GitHub signs (step 2's), signs in, prints the identity's ID and checks its rights on the
+   publisher, and publishes nothing. The first time, the check fails: add that ID to the publisher's members
    ([marketplace.visualstudio.com/manage](https://marketplace.visualstudio.com/manage/publishers/lgrosjean), Members),
    role Contributor, and run it again.
 

@@ -13,8 +13,9 @@
 - A roadmap of what Meridian offers that the extension does not use yet, on the documentation site
   ([Roadmap](https://lgrosjean.github.io/meridian-studio/roadmap/)).
 - A shorter README: what the extension does, how to install it and a quick start; the details are on the site.
-- Releases from a tag, once its tests pass: `vX.Y.Z` publishes to the Marketplace, `vX.Y.Z-rc.N` publishes a
-  pre-release, signed in through Microsoft Entra ID rather than a token; the `.vsix` on the GitHub release.
+- Releases from a tag, pushed or given to the release workflow run by hand, once its tests pass: `vX.Y.Z` publishes
+  to the Marketplace, `vX.Y.Z-rc.N` publishes a pre-release, signed in through Microsoft Entra ID rather than a
+  token; the `.vsix` on the GitHub release.
 
 ## 0.1.2
 
