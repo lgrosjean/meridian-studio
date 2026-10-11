@@ -32,6 +32,7 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: runner/uv.lock
+          prune-cache: false # keep the wheels downloaded (TensorFlow, Meridian…): pruning drops them
       - run: uv run --project runner runner/test_runner.py
 
   vscode:
@@ -44,6 +45,7 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: runner/uv.lock
+          prune-cache: false # keep the wheels downloaded (TensorFlow, Meridian…): pruning drops them
       - run: bun install --frozen-lockfile
       - run: uv sync --project runner # Meridian's environment: the data checks then run on their own
       - uses: actions/cache@v4 # VS Code and the YAML extension, not the test's profile
