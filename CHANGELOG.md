@@ -10,6 +10,7 @@
   breaks leaves the fit standing, and the panel says why it is missing.
 - The health score in the tree, the notification at the end of a fit and Meridian Runs; in MLflow, a metric
   (`health_score`), each check's status a tag (`review.status`, `review.convergence`…), the health card an artifact.
+- README: a roadmap of what Meridian offers that the extension does not use yet.
 
 ## 0.1.2
 
