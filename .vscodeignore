@@ -2,6 +2,8 @@
 .github/**
 src/**
 scripts/**
+test/**
+.vscode-test/**
 examples/**
 node_modules/**
 out/**/*.map

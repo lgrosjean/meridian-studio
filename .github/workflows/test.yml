@@ -1,0 +1,55 @@
+# Every test, on every push and on pull requests from forks (one from a branch here already ran on its push).
+# extension: types, bundle, the tree's and the dataset helper's logic. runner: the data checks, then a tiny fit and an
+# optimization (Meridian on CPU). vscode: the extension in a real VS Code, data checks included.
+name: tests
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  extension:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run build
+      - run: node scripts/check-columns.js
+
+  runner:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: runner/uv.lock
+      - run: uv run --project runner runner/test_runner.py
+
+  vscode:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: runner/uv.lock
+      - run: bun install --frozen-lockfile
+      - run: uv sync --project runner # Meridian's environment: the data checks then run on their own
+      - uses: actions/cache@v4 # VS Code and the YAML extension, not the test's profile
+        with:
+          path: |
+            .vscode-test/vscode-*
+            .vscode-test/extensions
+          key: vscode-test-${{ runner.os }}-${{ hashFiles('test/vscode/run.js') }}
+      - run: xvfb-run -a bun run test:vscode
