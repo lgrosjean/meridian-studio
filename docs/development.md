@@ -11,6 +11,7 @@ The extension is TypeScript, bundled by [bun](https://bun.sh); fits and optimiza
 | `src/datachecks.ts`      | the data checks in the editor                                                      |
 | `runner/runner.py`       | the runner's commands: `fit`, `optimize`, `check`                                  |
 | `runner/fit.py`, `runner/optimize.py`, `runner/priors.py` | Meridian: fit, budget optimizer, priors                   |
+| `runner/review.py`       | Meridian's review of a fit: Problems, results, MLflow                              |
 | `runner/checks.py`       | the data checks                                                                    |
 | `runner/templates/`      | what New dataset, New model and New scenario write                                 |
 | `schemas/`               | the YAML's JSON schemas, for completion and errors                                 |
@@ -20,7 +21,7 @@ The extension is TypeScript, bundled by [bun](https://bun.sh); fits and optimiza
 
 - `bun install`, then ++f5++ opens `examples/` with the extension loaded.
 - `bun run test`: type check, bundle, the tree's and the dataset helper's logic, then the runner (data checks, a
-  tiny fit of the example, an optimization, their MLflow runs; then the same against a local `mlflow server` keeping
+  tiny fit of the example and Meridian's review of it, an optimization, their MLflow runs; then the same against a local `mlflow server` keeping
   the files itself). A few minutes on CPU.
 - `bun run test:vscode`: the extension in a real VS Code with the YAML extension (both downloaded into
   `.vscode-test/` the first time; on Linux without a display, `xvfb-run -a bun run test:vscode`). Its data checks

@@ -42,8 +42,8 @@ Fits run on your machine, on CPU.
   in red in the tree.
 - **The tree explains each file**: a dataset unfolds into its CSV columns and their roles, unused ones greyed;
   a model into its priors per channel and its runs.
-- **Results beside the editor** after each run: R², MAPE, r-hat, divergences, ROI by channel with its interval;
-  or a scenario's spend before and after. Meridian's own HTML report opens in the editor too (its charts load
+- **Results beside the editor** after each run: R², MAPE, r-hat, divergences, Meridian's review of the fit (its
+  health score and checks), ROI by channel with its interval; or a scenario's spend before and after. Meridian's own HTML report opens in the editor too (its charts load
   Vega from gstatic.com, so they need the network).
 - **History**: every fit appends a line to `<model>.runs.jsonl` (when, the configuration, what it found), listed
   under the model; click one to see its results again.
@@ -149,10 +149,14 @@ Which checks are off is not data: changing them leaves the dataset's fits curren
 
 ## Runs, checks and tasks
 
-- **Meridian Runs**, a tab of the bottom panel, lists every fit of every model with its metrics. Click one for its
-  results; tick two to compare their metrics, ROI by channel and the configuration that differs.
+- **Meridian Runs**, a tab of the bottom panel, lists every fit of every model with its health score and metrics.
+  Click one for its results; tick two to compare their metrics, ROI by channel and the configuration that differs.
 - **Meridian's data checks** (multicollinearity, perfect correlation, a control that never varies…) land in Problems,
   on the lines naming the variables: the model's priors, and the dataset's mappings.
+- **After a fit, Meridian reviews it**: convergence, a negative baseline, the Bayesian p-value, goodness of fit, priors
+  the data did not move, ROI consistent with its priors, implausible or too uncertain ROI, potential bias. Each check
+  passes, asks for a review or fails, and they make a health score out of 100. What did not pass lands in Problems on
+  the lines naming its channels; the results panel lists every check, and opens Meridian's health card.
 - **Tasks**: every fit and optimization is a VS Code task of type `meridian` (Terminal › Run Task). It runs in the
   integrated terminal, stops and reruns like any task, and chains with `dependsOn`:
 
@@ -170,8 +174,9 @@ Which checks are off is not data: changing them leaves the dataset's fits curren
 ## MLflow
 
 Each fit is one MLflow run, in an experiment named after the project's folder. Its params are the model's
-`model_spec`, `sampling` and `priors`; its metrics R², MAPE, r-hat, divergences and ROI by channel; its input the
-dataset, as fitted; its artifacts Meridian's report, the reloadable model (`model.binpb`), the data and both YAMLs.
+`model_spec`, `sampling` and `priors`; its metrics R², MAPE, r-hat, divergences, the health score and ROI by channel;
+its tags the review's statuses (`review.status`, `review.convergence`…); its input the dataset, as fitted; its
+artifacts Meridian's report, its health card, the reloadable model (`model.binpb`), the data and both YAMLs.
 Meridian's own autologging adds its version, the `ModelSpec` and priors as Meridian resolved them (its defaults
 included) and the sampling's arguments. The run opens once the YAML and the CSV are read: a fit that fails after that
 shows as FAILED. Each optimization is a run too, under its fit's: the scenario as params, budget, outcome and ROI
@@ -213,13 +218,13 @@ project's store, started on first use and stopped with the editor.
   data/national_media.csv          your CSVs
   datasets/synthetic.yaml          which CSV, which columns, which channels
   models/synthetic-v1.yaml
-  models/synthetic-v1.result.json  the latest fit: quality, ROI per channel, where MLflow put the artifacts
+  models/synthetic-v1.result.json  the latest fit: quality, review, ROI per channel, where MLflow put the artifacts
   models/synthetic-v1.runs.jsonl   every fit, one line each
   scenarios/plus-10.yaml
   scenarios/plus-10.result.json    spend and outcome per channel, before and after
   scenarios/plus-10.html           Meridian's optimization summary
-  mlflow.db, mlruns/               the local MLflow store, or with a server the copy of each fit's model and report
-                                   (keep them out of git)
+  mlflow.db, mlruns/               the local MLflow store, or with a server the copy of each fit's model, report and
+                                   health card (keep them out of git)
 ```
 
 ## Development

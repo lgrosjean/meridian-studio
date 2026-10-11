@@ -46,13 +46,13 @@ The project ends up as:
   data/national_media.csv          your CSVs
   datasets/synthetic.yaml          which CSV, which columns, which channels
   models/synthetic-v1.yaml
-  models/synthetic-v1.result.json  the latest fit: quality, ROI per channel, where MLflow put the artifacts
+  models/synthetic-v1.result.json  the latest fit: quality, review, ROI per channel, where MLflow put the artifacts
   models/synthetic-v1.runs.jsonl   every fit, one line each
   scenarios/plus-10.yaml
   scenarios/plus-10.result.json    spend and outcome per channel, before and after
   scenarios/plus-10.html           Meridian's optimization summary
-  mlflow.db, mlruns/               the local MLflow store, or with a server the copy of each fit's model and report
-                                   (keep them out of git)
+  mlflow.db, mlruns/               the local MLflow store, or with a server the copy of each fit's model, report and
+                                   health card (keep them out of git)
 ```
 
 !!! tip "No CSV at hand?"

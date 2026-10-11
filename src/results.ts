@@ -4,11 +4,17 @@ import { randomBytes } from 'node:crypto'
 import * as vscode from 'vscode'
 import { stringify } from 'yaml'
 
+type Status = 'pass' | 'review' | 'fail'
+// Meridian's review of the fit (runner/review.py): every check, or why the review is missing. Fits before it have none.
+type Review =
+  | { status: Status; summary: string; health_score: number; checks: { code: string; title: string; status: Status; text: string; channels: string[] }[] }
+  | { error: string }
 type Fit = {
-  fit: { r_hat_max: number; divergences: number; r2: number; mape: number; wmape: number; seconds: number }
+  fit: { r_hat_max: number; divergences: number; r2: number; mape: number; wmape: number; seconds: number; health_score?: number }
   channels: { name: string; roi: number; roi_lo: number; roi_hi: number; contribution: number; spend: number }[]
   currency: string | null
-  mlflow: { run_id: string }
+  review?: Review
+  mlflow: { run_id: string; health?: string }
   at?: string
   config?: Record<string, unknown>
 }
@@ -26,10 +32,24 @@ const money = (v: number) => new Intl.NumberFormat('en', { notation: 'compact', 
 const pct = (v: number, signed = false) => `${signed && v > 0 ? '+' : ''}${(v * 100).toFixed(1)}%`
 const fixed = (v: number, d = 2) => (Number.isFinite(v) ? v.toFixed(d) : '–')
 
+const MARK: Record<Status, string> = { pass: '✓ pass', review: '! review', fail: '✕ fail' }
+function reviewBody(r?: Review): string {
+  if (!r) return ''
+  if ('error' in r) return `<h2>Model health</h2><p>Meridian's review could not run: ${esc(r.error)} (the runner's output has the details).</p>`
+  const rows = r.checks
+    .map((c) => `<tr><td>${esc(c.title)}</td><td class="${c.status}">${MARK[c.status] ?? esc(c.status)}</td><td class="text">${esc(c.text)}</td></tr>`)
+    .join('')
+  return `<h2>Model health</h2>
+  <p><span class="${r.status}">${esc(r.summary)}</span> <span class="dim">Meridian's review of the fit; what did not pass is also in Problems.</span></p>
+  <table><thead><tr><th>Check</th><th>Status</th><th>What Meridian says</th></tr></thead><tbody>${rows}</tbody></table>`
+}
+
 function fitBody(r: Fit): string {
   const f = r.fit
   const ok = (good: boolean, v: number = 0) => (!Number.isFinite(v) ? '' : good ? 'good' : 'warn')
+  const health = r.review && 'status' in r.review ? r.review : undefined
   const tiles = [
+    ...(health ? [['health', `${fixed(health.health_score, 0)}<span class="of"> / 100</span>`, health.status === 'pass' ? 'good' : 'warn']] : []),
     ['R²', fixed(f.r2), ok(f.r2 >= 0.8)],
     ['MAPE', pct(f.mape), ok(f.mape <= 0.15)],
     ['wMAPE', pct(f.wmape), ok(f.wmape <= 0.15)],
@@ -49,6 +69,7 @@ function fitBody(r: Fit): string {
     )
     .join('')
   return `<div class="tiles">${tiles.map(([k, v, cls]) => `<div class="tile ${cls}"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('')}</div>
+  ${reviewBody(r.review)}
   <h2>ROI by channel</h2>
   <table><thead><tr><th>Channel</th><th>ROI, 90% interval <span class="dim">(line at 1)</span></th><th class="n">ROI</th><th class="n">interval</th><th class="n">of KPI</th><th class="n">spend${r.currency ? ` (${esc(r.currency)})` : ''}</th></tr></thead><tbody>${rows}</tbody></table>
   ${r.config ? `<h2>Configuration</h2><pre>${esc(stringify(r.config, { flowCollectionPadding: false }))}</pre>` : ''}
@@ -100,45 +121,49 @@ td.bar{width:40%}.track,.pair{position:relative;height:12px}
 .before{background:var(--vscode-descriptionForeground);opacity:.5}.after{background:var(--vscode-charts-blue)}
 .key{display:inline-block;width:10px;height:5px;margin:0 4px 1px 8px;border-radius:2px;vertical-align:middle}
 pre{font-family:var(--vscode-editor-font-family);font-size:.92em;background:var(--vscode-textCodeBlock-background);padding:8px 10px;border-radius:4px;overflow:auto}
-.up{color:var(--vscode-testing-iconPassed)}.down{color:var(--vscode-editorWarning-foreground)}`
+.up{color:var(--vscode-testing-iconPassed)}.down{color:var(--vscode-editorWarning-foreground)}
+.pass{color:var(--vscode-testing-iconPassed)}.review{color:var(--vscode-editorWarning-foreground)}.fail{color:var(--vscode-editorError-foreground)}
+td.text{white-space:normal}.of{font-size:.6em;color:var(--vscode-descriptionForeground)}`
 
-function page(title: string, body: string, hasReport: boolean, hasRun: boolean): string {
+function page(title: string, body: string, hasReport: boolean, hasRun: boolean, hasHealth: boolean): string {
   const nonce = randomBytes(16).toString('base64')
   return `<!doctype html><html><head><meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'">
   <style>${STYLE}</style></head><body>
-  <div class="head"><h1>${esc(title)}</h1><div>${hasRun ? '<button id="mlflow">Open in MLflow</button> ' : ''}${hasReport ? '<button id="report">Open Meridian report</button>' : ''}</div></div>
+  <div class="head"><h1>${esc(title)}</h1><div>${hasRun ? '<button id="mlflow">Open in MLflow</button> ' : ''}${hasHealth ? '<button id="health">Open health card</button> ' : ''}${hasReport ? '<button id="report">Open Meridian report</button>' : ''}</div></div>
   ${body}
-  <script nonce="${nonce}">const vs=acquireVsCodeApi();for(const id of ['report','mlflow'])document.getElementById(id)?.addEventListener('click',()=>vs.postMessage(id))</script>
+  <script nonce="${nonce}">const vs=acquireVsCodeApi();for(const id of ['report','mlflow','health'])document.getElementById(id)?.addEventListener('click',()=>vs.postMessage(id))</script>
   </body></html>`
 }
 
 const panels = new Map<string, vscode.WebviewPanel>() // by result.json path
 
 /** Shows (or refreshes) the panel of a model or a scenario. `result` is its result.json's text, undefined if none yet.
- * `open` opens Meridian's report and the run in MLflow. */
-export function showResults(kind: 'models' | 'scenarios', name: string, file: string, result: string | undefined, open: { report: () => void; mlflow: () => void }, reveal = true) {
+ * `open` opens Meridian's report, the run in MLflow, and a fit's health card. */
+export function showResults(kind: 'models' | 'scenarios', name: string, file: string, result: string | undefined, open: { report: () => void; mlflow: () => void; health?: () => void }, reveal = true) {
   let panel = panels.get(file)
   if (!panel) {
     if (!reveal) return
     panel = vscode.window.createWebviewPanel('meridian.results', name, { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true }, { enableScripts: true })
     panel.iconPath = new vscode.ThemeIcon(kind === 'models' ? 'graph-line' : 'pie-chart')
-    panel.webview.onDidReceiveMessage((m) => (m === 'report' ? open.report() : m === 'mlflow' && open.mlflow()))
+    panel.webview.onDidReceiveMessage((m) => (m === 'report' ? open.report() : m === 'mlflow' ? open.mlflow() : m === 'health' && open.health?.()))
     panel.onDidDispose(() => panels.delete(file))
     panels.set(file, panel)
   } else if (reveal) panel.reveal(undefined, true)
   let body = `<p class="dim">No results yet: ${kind === 'models' ? 'fit' : 'optimize'} it first.</p>`
   let run = false
+  let health = false
   if (result)
     try {
       const r = JSON.parse(result)
       body = kind === 'models' ? fitBody(r) : scenarioBody(r)
       run = !!r.mlflow?.run_id
+      health = !!r.mlflow?.health && !!open.health
     } catch (e) {
       body = `<p>Could not read ${esc(file)}: ${esc(e instanceof Error ? e.message : e)}</p>`
     }
   panel.title = name
-  panel.webview.html = page(`${kind === 'models' ? 'Fit' : 'Scenario'} · ${name}`, body, !!result, run)
+  panel.webview.html = page(`${kind === 'models' ? 'Fit' : 'Scenario'} · ${name}`, body, !!result, run, health)
 }
 
 /** Re-renders the open panels, after a file changed. */
