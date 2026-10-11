@@ -5,6 +5,10 @@
 - **A documentation site**, [lgrosjean.github.io/meridian-studio](https://lgrosjean.github.io/meridian-studio/):
   getting started, a guide to datasets, data checks, models, scenarios, runs and CI, and a reference of every YAML
   key, command and setting.
+- **MLflow**: Meridian's own autologging in each fit's run (its version, the `ModelSpec` and priors as Meridian
+  resolved them, the sampling's arguments), and an optional `mlflow:` block in a model: its runs' name (`{model}`,
+  `{dataset}`), description and tags, autologging off. The run opens before Meridian is built, not after the fit:
+  a fit that fails while sampling shows as FAILED, and the run lasts as long as the fit.
 - **Data checks**, like a linter's: each CSV checked by the role of its columns, each finding with a code, in
   Problems on the line naming its column and counted above the file. T001–T003 the dates (weeks missing, off the
   step, different per geo), K001–K002 the KPI (empty after it starts, negative), M001–M003 the channels (negative,

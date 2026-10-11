@@ -59,20 +59,22 @@ const csvOf = (name: string): string | undefined => {
   return csv ? (isAbsolute(csv) ? csv : join(project(), csv)) : undefined
 }
 
-/** A YAML less its top-level `checks:` block (and the indented lines under it): which data checks are off is not data. */
-const withoutChecks = (text: string) => {
-  const lines = text.split('\n')
-  const at = lines.findIndex((l) => /^checks:/.test(l))
-  if (at < 0) return text
-  let end = at + 1
-  for (let i = at + 1; i < lines.length && !/^\S/.test(lines[i]); i++) if (lines[i].trim()) end = i + 1 // up to its last indented line
-  return [...lines.slice(0, at), ...lines.slice(end)].join('\n')
-}
+/** A YAML less its top-level `checks:` and `mlflow:` blocks (and the indented lines under them): which data checks are
+ * off is not data, and how a fit is logged is not what it fits. */
+const withoutSettings = (text: string) =>
+  ['checks', 'mlflow'].reduce((text, key) => {
+    const lines = text.split('\n')
+    const at = lines.findIndex((l) => l.startsWith(`${key}:`))
+    if (at < 0) return text
+    let end = at + 1
+    for (let i = at + 1; i < lines.length && !/^\S/.test(lines[i]); i++) if (lines[i].trim()) end = i + 1 // up to its last indented line
+    return [...lines.slice(0, at), ...lines.slice(end)].join('\n')
+  }, text)
 /** What a run depends on: its YAML, and for a model or a scenario what its parent last produced. */
 function fingerprintOf(root: Root, name: string): string {
   const { parent, key } = KINDS[root]
   // Its own name and its parent's name are not content: a rename leaves the runs current.
-  const text = withoutChecks(fs.readFileSync(yamlOf(root, name), 'utf8')).replace(new RegExp(`^(name${key ? `|${key}` : ''}):.*$`, 'gm'), '')
+  const text = withoutSettings(fs.readFileSync(yamlOf(root, name), 'utf8')).replace(new RegExp(`^(name${key ? `|${key}` : ''}):.*$`, 'gm'), '')
   if (!parent) {
     const csv = csvOf(name)
     return sha(`${text}\n${csv && fs.existsSync(csv) ? sha(fs.readFileSync(csv).toString('latin1')) : 'no csv'}`)
@@ -964,4 +966,4 @@ export function deactivate() {}
 export const _setStorage = (dir: string) => (storage = dir)
 export * as _dataset from './dataset' // for scripts/check-columns.js, like the ones below
 export * as _csv from './csv'
-export { wordRange as _wordRange, referenceIn as _referenceIn, fingerprintOf as _fingerprintOf, withoutChecks as _withoutChecks, ensureUv as _ensureUv, columnsOf as _columnsOf, priorsOf as _priorsOf, modelChildren as _modelChildren, folderChildren as _folderChildren } // for scripts/check-columns.js
+export { wordRange as _wordRange, referenceIn as _referenceIn, fingerprintOf as _fingerprintOf, withoutSettings as _withoutSettings, ensureUv as _ensureUv, columnsOf as _columnsOf, priorsOf as _priorsOf, modelChildren as _modelChildren, folderChildren as _folderChildren } // for scripts/check-columns.js

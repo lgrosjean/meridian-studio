@@ -3577,6 +3577,38 @@
           "description": "For reproducible fits."
         }
       }
+    },
+    "mlflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "How this model's fits are logged to MLflow, all optional. Changing it leaves the fit current.",
+      "properties": {
+        "run_name": {
+          "type": "string",
+          "default": "{model}",
+          "description": "Each fit's run name: {model} and {dataset} stand for their names. Default {model}, the file's name."
+        },
+        "description": {
+          "type": "string",
+          "description": "Each fit's description in MLflow (Markdown): what this model tries."
+        },
+        "tags": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          },
+          "description": "More tags on each fit's run, such as owner or ticket."
+        },
+        "autolog": {
+          "type": "boolean",
+          "default": true,
+          "description": "Meridian's MLflow autologging: its version, the ModelSpec and priors as Meridian resolved them (defaults included), the sampling's arguments."
+        }
+      }
     }
   },
   "definitions": {

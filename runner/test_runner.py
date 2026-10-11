@@ -164,7 +164,14 @@ def main():
         (project / "models/tiny.yaml").write_text(good.replace("ch1: { mean: 2, sd: 1 }", "ch9: { mean: 2, sd: 1 }"))
         code, ev = run("fit", str(project), "models/tiny.yaml")
         assert code == 1 and "ch9 not in" in ev[-1]["message"], ev
-        (project / "models/tiny.yaml").write_text(good)
+        # The mlflow: block is checked before anything runs.
+        (project / "models/tiny.yaml").write_text(good + "mlflow: { run_name: '{who}' }\n")
+        code, ev = run("fit", str(project), "models/tiny.yaml")
+        assert code == 1 and "{model} and {dataset}" in ev[-1]["message"], ev
+        (project / "models/tiny.yaml").write_text(good + "mlflow: { autolg: false }\n")
+        code, ev = run("fit", str(project), "models/tiny.yaml")
+        assert code == 1 and "unknown autolg" in ev[-1]["message"], ev
+        (project / "models/tiny.yaml").write_text(good + "mlflow:\n  run_name: '{model} on {dataset}'\n  description: Tiny, for the tests\n  tags: { owner: ci, ticket: 42 }\n")
 
         code, ev = run("fit", str(project), "models/tiny.yaml")
         assert code == 0, ev
@@ -177,6 +184,17 @@ def main():
         runs = [json.loads(l, parse_constant=refuse) for l in (project / "models/tiny.runs.jsonl").read_text().splitlines()]
         assert len(runs) == 1 and runs[0]["mlflow"]["run_id"] == r["mlflow"]["run_id"], runs
         assert runs[0]["config"]["priors"]["roi_m"]["ch1"] == {"mean": 2, "sd": 1} and runs[0]["at"].endswith("+00:00"), runs[0]
+        # In MLflow, one run: the fit's (the mistakes above, in the YAML or the CSV, made none), named, described and
+        # tagged by the mlflow: block, with what Meridian's autolog adds to ours: the spec and sampling as Meridian took them.
+        import mlflow
+
+        client = mlflow.MlflowClient(f"sqlite:///{project / 'mlflow.db'}")
+        logged = client.search_runs([client.get_experiment_by_name(project.name).experiment_id])
+        assert [x.info.run_id for x in logged] == [r["mlflow"]["run_id"]], logged
+        info, tags, params = logged[0].info, logged[0].data.tags, logged[0].data.params
+        assert info.status == "FINISHED" and info.run_name == "tiny on synthetic", info
+        assert tags["owner"] == "ci" and tags["ticket"] == "42" and tags["mlflow.note.content"] == "Tiny, for the tests" and tags["studio.model"] == "models/tiny.yaml", tags
+        assert params["model_spec.max_lag"] == params["spec.max_lag"] == "4" and params["sample_posterior.n_keep"] == "50" and "meridian_version" in params, params
 
         (project / "scenarios/tiny-plus-10.yaml").write_text(
             "model: tiny\nbudget: +10%\nbounds: { lower: 0.3, upper: 0.3 }\nchannels: { ch0: { lower: 0.1, upper: 0.5 } }\n"

@@ -22,3 +22,8 @@ sampling:
   n_burnin: 0
   n_keep: 1000
   seed: 1
+# mlflow:                       # how each fit is logged to MLflow; changing it leaves the fit current
+#   run_name: "{model}"         # {model} and {dataset} stand for their names
+#   description: what this model tries
+#   tags: { owner: me }
+#   autolog: true               # Meridian's own logging: its version, the spec and priors as it resolved them

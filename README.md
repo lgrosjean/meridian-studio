@@ -167,6 +167,25 @@ Which checks are off is not data: changing them leaves the dataset's fits curren
 }
 ```
 
+## MLflow
+
+Each fit is one MLflow run, in an experiment named after the project's folder, in the store
+`meridian.mlflowTrackingUri` names (by default `mlflow.db` and `mlruns/` in the project). Its params are the model's
+`model_spec`, `sampling` and `priors`; its metrics R², MAPE, r-hat, divergences and ROI by channel; its artifacts
+Meridian's report, the reloadable model (`model.binpb`), the data and both YAMLs. Meridian's own autologging adds its
+version, the `ModelSpec` and priors as Meridian resolved them (its defaults included) and the sampling's arguments.
+The run opens once the YAML and the CSV are read: a fit that fails after that shows as FAILED.
+
+An optional `mlflow:` block in a model names, describes and tags its runs; changing it leaves the fit current:
+
+```yaml
+mlflow:
+  run_name: "{model} on {dataset}"   # default {model}, the file's name
+  description: TV's ROI prior from the March geo test
+  tags: { owner: marketing, ticket: MMM-42 }
+  autolog: false                     # Meridian's autologging, on by default
+```
+
 ## Settings
 
 | Setting                     | Default | Meaning                                                                 |

@@ -87,6 +87,46 @@ def gitignore(project: Path):
         file.write_text("\n".join(lines + missing) + "\n")
 
 
+def tracking(project: Path):
+    """The project's experiment, in the store MLFLOW_TRACKING_URI names (the extension's setting), else in the project."""
+    import mlflow
+
+    gitignore(project)
+    if not os.environ.get("MLFLOW_TRACKING_URI"):
+        mlflow.set_tracking_uri(f"sqlite:///{project / 'mlflow.db'}")
+    exp = project.resolve().name
+    if mlflow.get_experiment_by_name(exp) is None:
+        mlflow.create_experiment(exp, artifact_location=(project / "mlruns").resolve().as_uri())
+    mlflow.set_experiment(exp)
+
+
+MLFLOW = ("run_name", "description", "tags", "autolog")
+
+
+def run_options(m: dict) -> dict:
+    """The model's `mlflow:` block, all optional: its fits' run name, description and tags, and Meridian's autolog."""
+    x = m.get("mlflow") or {}
+    if not isinstance(x, dict):
+        raise Fail(f"mlflow: takes {', '.join(MLFLOW)}")
+    unknown = set(x) - set(MLFLOW)
+    if unknown:
+        raise Fail(f"mlflow: unknown {', '.join(sorted(unknown))}; accepted: {', '.join(MLFLOW)}")
+    tags = x.get("tags") or {}
+    if not isinstance(tags, dict):
+        raise Fail("mlflow.tags: name: value pairs")
+    try:
+        run_name = str(x.get("run_name") or "{model}").format(model=m["_file"].stem, dataset=m["dataset"])
+    except (KeyError, IndexError, ValueError, AttributeError) as e:
+        raise Fail(f"mlflow.run_name: it can name {{model}} and {{dataset}} ({type(e).__name__}: {e})") from e
+    description = x.get("description")
+    return {
+        "run_name": run_name,
+        "description": None if description is None else str(description),
+        "tags": {str(k): str(v) for k, v in tags.items()},
+        "autolog": bool(x.get("autolog", True)),
+    }
+
+
 def flat(d: dict, prefix: str = "") -> dict:
     out = {}
     for k, v in d.items():
@@ -97,26 +137,30 @@ def flat(d: dict, prefix: str = "") -> dict:
     return out
 
 
-def prepare(project: Path, path: str, emit):
-    """A model's data, Meridian on it and Meridian's data checks (its EDA), before any sampling.
-    Meridian is None when it refuses the data outright; the checks then say why."""
-    m = read_model(project, path)
+def inputs(project: Path, m: dict, emit):
+    """A model's data and spec, as Meridian takes them: what is wrong in its YAML, its dataset or its CSV fails here."""
     ds_path = f"datasets/{m['dataset']}.yaml"
     d, df, fingerprint = frame(project, ds_path)
     df = window(df, d["coord_to_columns"].get("time", "time"), m.get("window"))
 
-    from meridian.model import model
-
     emit(event="phase", name="data", state="run")
     data = input_data(df, d)
+    return ds_path, d, df, fingerprint, data, model_spec(m, data)
+
+
+def build(data, ms, emit):
+    """Meridian on the data, and its data checks (its EDA), before any sampling.
+    Meridian is None when it refuses the data outright; the checks then say why."""
+    from meridian.model import model
+
     known = names_in(data)
     try:
-        mmm = model.Meridian(data, model_spec(m, data))
+        mmm = model.Meridian(data, ms)
     except ValueError as e:  # Meridian refuses some data outright, e.g. a control that never varies
         named = [v for v in re.findall(r"'([^']+)'", str(e)) if v in known]
         if not named:
             raise
-        return m, ds_path, d, df, fingerprint, None, [{"status": "fail", "code": "DATA", "title": "Data", "text": str(e), "vars": named}]
+        return None, [{"status": "fail", "code": "DATA", "title": "Data", "text": str(e), "vars": named}]
     emit(event="phase", name="data", state="done")
 
     eda = mmm.eda_outcomes
@@ -131,12 +175,13 @@ def prepare(project: Path, path: str, emit):
         for o in (getattr(eda, x.name) for x in dataclasses.fields(eda))
         for f in o.findings
     ]
-    return m, ds_path, d, df, fingerprint, mmm, items
+    return mmm, items
 
 
 def eda(project: Path, path: str, emit) -> dict:
     """Meridian's data checks for a model, what a fit would find before sampling: in seconds, without fitting."""
-    *_, mmm, items = prepare(project, path, emit)
+    *_, data, ms = inputs(project, read_model(project, path), emit)
+    _, items = build(data, ms, emit)
     emit(event="checks", items=items)
     count = lambda status: sum(i["status"] == status for i in items)  # noqa: E731
     return {"errors": count("fail"), "warnings": count("review"), "infos": count("info")}
@@ -144,101 +189,105 @@ def eda(project: Path, path: str, emit) -> dict:
 
 def fit(project: Path, path: str, emit) -> dict:
     from meridian.model import model  # noqa: F401  imported before the clock starts, as before: fit time is Meridian's own
-
-    t0 = time.time()
-    m, ds_path, d, df, fingerprint, mmm, items = prepare(project, path, emit)
-    emit(event="checks", items=items)
-    if mmm is None:
-        raise Fail(f"Meridian refuses the data: {', '.join(items[0]['vars'])} (see Problems)")
-    if any(i["status"] == "fail" for i in items):
-        raise Fail("Meridian's data checks failed (see Problems)")
-    channels = channels_of(d)
-
-    from meridian.analysis import analyzer, summarizer
-    from meridian.schema.serde import meridian_serde
-
-    s = dict(m.get("sampling") or {})
-    n_prior = s.pop("n_prior", 500)
-    emit(event="phase", name="prior", state="run")
-    mmm.sample_prior(n_prior, seed=s.get("seed"))
-    emit(event="phase", name="prior", state="done")
-    batches = s.get("n_chains", [2, 2])
-    # ponytail: one phase for all batches; per-batch events need a sample_posterior call per batch and a merge.
-    emit(event="phase", name="posterior", state="run", of=len(batches) if isinstance(batches, list) else 1)
-    mmm.sample_posterior(
-        n_chains=batches, n_adapt=s.get("n_adapt", 1000), n_burnin=s.get("n_burnin", 0),
-        n_keep=s.get("n_keep", 1000), seed=s.get("seed"),
-    )
-    emit(event="phase", name="posterior", state="done")
-
-    emit(event="phase", name="analysis", state="run")
-    a = analyzer.Analyzer(mmm)
-    rhat = max(float(np.nanmax(np.asarray(v))) for v in a.get_rhat().values())
-    acc = a.predictive_accuracy()["value"].sel(geo_granularity="national").to_series()  # geo models also give "geo"
-    sm = a.summary_metrics().sel(distribution="posterior")
-    fit_block = {
-        "r_hat_max": round(rhat, 4),
-        "divergences": int(mmm.inference_data.sample_stats["diverging"].sum()),
-        "r2": round(float(acc["R_Squared"]), 4),
-        "mape": round(float(acc["MAPE"]), 4),
-        "wmape": round(float(acc["wMAPE"]), 4),
-        "seconds": round(time.time() - t0),
-    }
-    rows = [
-        {
-            "name": ch,
-            "roi": float(sm.roi.sel(channel=ch, metric="mean")),
-            "roi_lo": float(sm.roi.sel(channel=ch, metric="ci_lo")),
-            "roi_hi": float(sm.roi.sel(channel=ch, metric="ci_hi")),
-            "contribution": float(sm.pct_of_contribution.sel(channel=ch, metric="mean")) / 100,
-            "spend": float(sm.spend.sel(channel=ch)),
-        }
-        for ch in channels
-    ]
-    emit(event="phase", name="analysis", state="done")
-
-    emit(event="phase", name="outputs", state="run")
     import mlflow
 
-    gitignore(project)
-    if not os.environ.get("MLFLOW_TRACKING_URI"):
-        mlflow.set_tracking_uri(f"sqlite:///{project / 'mlflow.db'}")
-    exp = project.resolve().name
-    if mlflow.get_experiment_by_name(exp) is None:
-        mlflow.create_experiment(exp, artifact_location=(project / "mlruns").resolve().as_uri())
-    mlflow.set_experiment(exp)
+    m = read_model(project, path)
     name = m["_file"].stem
-    with tempfile.TemporaryDirectory() as tmp, mlflow.start_run(run_name=name) as run:
-        tmp = Path(tmp)
-        mlflow.set_tags({
-            "studio.project": str(project.resolve()), "studio.model": path, "studio.dataset": ds_path,
-            "studio.dataset_fingerprint": fingerprint, 
-        })
-        mlflow.log_params(flat({
-            "model_spec": m.get("model_spec") or {}, "sampling": m.get("sampling") or {}, "priors": m.get("priors") or {},
-        }))
-        mlflow.log_metrics(fit_block | {
-            f"{k}.{r['name']}": r[k] for r in rows for k in ("roi", "roi_lo", "roi_hi", "contribution")
-        })
-        meridian_serde.save_meridian(mmm, str(tmp / "model.binpb"))
-        sw = m.get("summary_window") or m.get("window") or {}
-        summarizer.Summarizer(mmm).output_model_results_summary(
-            "summary.html", str(tmp), sw.get("start") and str(sw["start"]), sw.get("end") and str(sw["end"])
+    options = run_options(m)
+    tracking(project)
+    if options.pop("autolog"):
+        from meridian.mlflow import autolog
+
+        autolog.autolog()  # Meridian's own: its version, the ModelSpec and priors as it resolved them, sampling's arguments
+
+    t0 = time.time()
+    ds_path, d, df, fingerprint, data, ms = inputs(project, m, emit)
+    # The run opens once the YAML and the CSV hold, before Meridian: Meridian logs into it as it builds and samples,
+    # and a fit that fails from there shows in MLflow as FAILED.
+    with mlflow.start_run(**options) as run:
+        mmm, items = build(data, ms, emit)
+        emit(event="checks", items=items)
+        if mmm is None:
+            raise Fail(f"Meridian refuses the data: {', '.join(items[0]['vars'])} (see Problems)")
+        if any(i["status"] == "fail" for i in items):
+            raise Fail("Meridian's data checks failed (see Problems)")
+        channels = channels_of(d)
+
+        from meridian.analysis import analyzer, summarizer
+        from meridian.schema.serde import meridian_serde
+
+        s = dict(m.get("sampling") or {})
+        n_prior = s.pop("n_prior", 500)
+        emit(event="phase", name="prior", state="run")
+        mmm.sample_prior(n_prior, seed=s.get("seed"))
+        emit(event="phase", name="prior", state="done")
+        batches = s.get("n_chains", [2, 2])
+        # ponytail: one phase for all batches; per-batch events need a sample_posterior call per batch and a merge.
+        emit(event="phase", name="posterior", state="run", of=len(batches) if isinstance(batches, list) else 1)
+        mmm.sample_posterior(
+            n_chains=batches, n_adapt=s.get("n_adapt", 1000), n_burnin=s.get("n_burnin", 0),
+            n_keep=s.get("n_keep", 1000), seed=s.get("seed"),
         )
-        df.to_parquet(tmp / "dataset.parquet")
-        (tmp / "model.yaml").write_text(m["_file"].read_text())
-        (tmp / "dataset.yaml").write_text(d["_file"].read_text())
-        mlflow.log_artifacts(str(tmp))
-        # ponytail: no Mmm proto with analyses; create_mmm_proto needs processor specs. model.binpb is the reloadable kernel.
-        artifacts = Path(mlflow.get_artifact_uri().removeprefix("file://"))
-        rel = os.path.relpath(artifacts, project.resolve())
-        result = {
-            "mlflow": {"run_id": run.info.run_id, "artifacts": rel, "report": f"{rel}/summary.html"},
-            "fit": fit_block,
-            "channels": rows,
-            "currency": d.get("currency_code"),
-            "dataset_fingerprint": fingerprint,
+        emit(event="phase", name="posterior", state="done")
+
+        emit(event="phase", name="analysis", state="run")
+        a = analyzer.Analyzer(mmm)
+        rhat = max(float(np.nanmax(np.asarray(v))) for v in a.get_rhat().values())
+        acc = a.predictive_accuracy()["value"].sel(geo_granularity="national").to_series()  # geo models also give "geo"
+        sm = a.summary_metrics().sel(distribution="posterior")
+        fit_block = {
+            "r_hat_max": round(rhat, 4),
+            "divergences": int(mmm.inference_data.sample_stats["diverging"].sum()),
+            "r2": round(float(acc["R_Squared"]), 4),
+            "mape": round(float(acc["MAPE"]), 4),
+            "wmape": round(float(acc["wMAPE"]), 4),
+            "seconds": round(time.time() - t0),
         }
+        rows = [
+            {
+                "name": ch,
+                "roi": float(sm.roi.sel(channel=ch, metric="mean")),
+                "roi_lo": float(sm.roi.sel(channel=ch, metric="ci_lo")),
+                "roi_hi": float(sm.roi.sel(channel=ch, metric="ci_hi")),
+                "contribution": float(sm.pct_of_contribution.sel(channel=ch, metric="mean")) / 100,
+                "spend": float(sm.spend.sel(channel=ch)),
+            }
+            for ch in channels
+        ]
+        emit(event="phase", name="analysis", state="done")
+
+        emit(event="phase", name="outputs", state="run")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            mlflow.set_tags({
+                "studio.project": str(project.resolve()), "studio.model": path, "studio.dataset": ds_path,
+                "studio.dataset_fingerprint": fingerprint, 
+            })
+            mlflow.log_params(flat({
+                "model_spec": m.get("model_spec") or {}, "sampling": m.get("sampling") or {}, "priors": m.get("priors") or {},
+            }))
+            mlflow.log_metrics(fit_block | {
+                f"{k}.{r['name']}": r[k] for r in rows for k in ("roi", "roi_lo", "roi_hi", "contribution")
+            })
+            meridian_serde.save_meridian(mmm, str(tmp / "model.binpb"))
+            sw = m.get("summary_window") or m.get("window") or {}
+            summarizer.Summarizer(mmm).output_model_results_summary(
+                "summary.html", str(tmp), sw.get("start") and str(sw["start"]), sw.get("end") and str(sw["end"])
+            )
+            df.to_parquet(tmp / "dataset.parquet")
+            (tmp / "model.yaml").write_text(m["_file"].read_text())
+            (tmp / "dataset.yaml").write_text(d["_file"].read_text())
+            mlflow.log_artifacts(str(tmp))
+            # ponytail: no Mmm proto with analyses; create_mmm_proto needs processor specs. model.binpb is the reloadable kernel.
+            artifacts = Path(mlflow.get_artifact_uri().removeprefix("file://"))
+            rel = os.path.relpath(artifacts, project.resolve())
+            result = {
+                "mlflow": {"run_id": run.info.run_id, "artifacts": rel, "report": f"{rel}/summary.html"},
+                "fit": fit_block,
+                "channels": rows,
+                "currency": d.get("currency_code"),
+                "dataset_fingerprint": fingerprint,
+            }
     out = project / "models" / f"{name}.result.json"
     out.write_text(json.dumps(clean(result), indent=2, allow_nan=False) + "\n")
     # The model's history: one line per fit, what it was given and what it found; the tree lists them.
