@@ -10,8 +10,8 @@ on:
   workflow_dispatch:
   workflow_call:
 
-concurrency:
-  group: tests-${{ github.ref }}
+concurrency: # per workflow (called, github.workflow is the caller's): a push to main spares a release's tests
+  group: tests-${{ github.ref }}-${{ github.workflow }}
   cancel-in-progress: true
 
 jobs:
