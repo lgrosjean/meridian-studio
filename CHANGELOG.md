@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.2
 
 - **A documentation site**, [lgrosjean.github.io/meridian-studio](https://lgrosjean.github.io/meridian-studio/):
   getting started, a guide to datasets, data checks, models, scenarios, runs and CI, and a reference of every YAML
