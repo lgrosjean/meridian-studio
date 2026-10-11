@@ -11,6 +11,8 @@
 - The health score in the tree, the notification at the end of a fit and Meridian Runs; in MLflow, a metric
   (`health_score`), each check's status a tag (`review.status`, `review.convergence`…), the health card an artifact.
 - README: a roadmap of what Meridian offers that the extension does not use yet.
+- Releases from a tag, once its tests pass: `vX.Y.Z` publishes to the Marketplace, `vX.Y.Z-rc.N` publishes a
+  pre-release, signed in through Microsoft Entra ID rather than a token; the `.vsix` on the GitHub release.
 
 ## 0.1.2
 

@@ -32,7 +32,69 @@ The extension is TypeScript, bundled by [bun](https://bun.sh); fits and optimiza
   installed Meridian, after an upgrade.
 - `bun run package` builds the `.vsix`; `code --install-extension meridian-studio-*.vsix` installs it.
 
-CI (`.github/workflows/test.yml`) runs the tests on every push.
+CI (`.github/workflows/test.yml`) runs the tests on every push to a branch, and on a tag before its release.
+
+## Releases
+
+A tag publishes the extension to the VS Code Marketplace once the tests pass on it (`.github/workflows/release.yml`):
+
+| Tag           | Publishes            |
+|---------------|----------------------|
+| `v0.4.0`      | 0.4.0, a release     |
+| `v0.3.0-rc.1` | 0.3.0, a pre-release |
+
+The tag names the version in `package.json`; the workflow stops when they differ. The Marketplace takes
+`major.minor.patch` only: the `-rc.N` suffix picks the channel, not the number, and a version published once, as a
+release or a pre-release, cannot be published again. Each publication has its own number, then; VS Code's
+[convention](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#prerelease-extensions) is
+odd minors for pre-releases (0.3.x), even ones for releases (0.4.x). The `.vsix` goes on the tag's GitHub release,
+with the version's section of the changelog.
+
+```sh
+# "version": "0.3.0" in package.json, committed
+git tag v0.3.0-rc.1
+git push origin v0.3.0-rc.1
+```
+
+### Signing in to the Marketplace
+
+No token: the workflow signs in to Microsoft Entra ID as a managed identity that trusts the repository's
+`marketplace` environment, through GitHub's OIDC, and `vsce publish --azure-credential` publishes as that identity.
+(The Marketplace's personal access tokens are global Azure DevOps tokens, which Microsoft retires on December 1,
+2026.) Once:
+
+1. **A managed identity**, user-assigned, in any Azure subscription: a free one does, the identity costs nothing and
+   needs no role.
+
+    ```sh
+    az group create --name meridian-studio --location westeurope
+    az identity create --resource-group meridian-studio --name marketplace-publisher
+    ```
+
+2. **Its federated credential**, trusting this repository's `marketplace` environment. GitHub names a repository
+   created since July 15, 2026 by its IDs as well as its name (`owner@id/repo@id`), hence the subject:
+
+    ```sh
+    az identity federated-credential create --resource-group meridian-studio \
+      --identity-name marketplace-publisher --name github-marketplace \
+      --issuer https://token.actions.githubusercontent.com --audiences api://AzureADTokenExchange \
+      --subject 'repo:lgrosjean@34337781/meridian-studio@1412399345:environment:marketplace'
+    ```
+
+3. **The `marketplace` environment** in GitHub (Settings › Environments): deployments from the tags `v*` and the
+   branch `main` only (a required reviewer, optionally, then approves each publication), and two secrets,
+   `AZURE_CLIENT_ID` and `AZURE_TENANT_ID`:
+
+    ```sh
+    az identity show --resource-group meridian-studio --name marketplace-publisher --query clientId --output tsv
+    az account show --query tenantId --output tsv
+    ```
+
+4. **A dry run**: Actions › release › Run workflow, on `main`. It runs the tests and packages, prints the subject
+   GitHub signs (step 2's), signs in, prints the identity's ID and checks its rights on the publisher, and publishes
+   nothing. The first time, the check fails: add that ID to the publisher's members
+   ([marketplace.visualstudio.com/manage](https://marketplace.visualstudio.com/manage/publishers/lgrosjean), Members),
+   role Contributor, and run it again.
 
 ## This site
 
