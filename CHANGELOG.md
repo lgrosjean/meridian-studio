@@ -14,7 +14,8 @@
 - **Check**, above a model: Meridian's own data checks with its spec, without sampling. ▶ Fit (and its task) runs the
   dataset's checks first, and stops on an error unless told **Fit anyway**.
 - **Checks in CI**: `runner.py check <project> [datasets or models…] --format text|json|github`, exit 1 on an error;
-  the data checks need only pandas and pyyaml. The README has a GitHub Actions workflow.
+  the data checks need only pandas and pyyaml. The documentation has a GitHub Actions workflow
+  ([Checks in CI](https://lgrosjean.github.io/meridian-studio/guide/ci/)).
 - **Datasets from their CSV.** New dataset fills the YAML from the CSV: dates → `time`, the column repeating them →
   `geo`, impressions paired with spend by name into channels, KPI, revenue per KPI and controls by name.
   **Complete from \<csv\>** above a dataset does it again; what it cannot place stays unused.
