@@ -1,0 +1,107 @@
+# Publishes the extension to the VS Code Marketplace when a version is tagged, once the tests pass. The tag names
+# package.json's version: v0.4.0 publishes a release, v0.3.0-rc.1 a pre-release. The Marketplace takes X.Y.Z only, so
+# the suffix picks the channel, not the number: each publication has its own X.Y.Z. The .vsix goes on the tag's
+# GitHub release.
+# No token: the job signs in to Microsoft Entra ID as a managed identity that trusts this repository's `marketplace`
+# environment (GitHub's OIDC), and vsce publishes as that identity. Run by hand, it publishes nothing: it packages,
+# prints what the setup needs (the OIDC subject, the identity's ID) and checks the identity's rights on the publisher.
+# Setup: docs/development.md, Releases.
+name: release
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false # never halfway through a publication
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      pre-release: ${{ steps.version.outputs.pre-release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: package.json
+          sparse-checkout-cone-mode: false
+      - id: version
+        name: The tag against package.json and the Marketplace
+        run: |
+          version=$(jq -r .version package.json)
+          id=$(jq -r '.publisher + "." + .name' package.json)
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            tagged=${GITHUB_REF_NAME#v}
+            if [ "${tagged%-rc.*}" != "$version" ]; then
+              echo "::error::$GITHUB_REF_NAME, but package.json says $version: set the version in package.json, then tag that commit"
+              exit 1
+            fi
+            curl -sSf -X POST https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery \
+              -H 'Content-Type: application/json' -H 'Accept: application/json;api-version=3.0-preview.1' \
+              -d "{\"filters\":[{\"criteria\":[{\"filterType\":7,\"value\":\"$id\"}]}],\"flags\":1}" \
+              | jq -r '.results[0].extensions[0].versions[]?.version' > published
+            if grep -qxF "$version" published; then
+              echo "::error::$version is on the Marketplace already, and a pre-release and a release cannot share a number: set the next one in package.json"
+              exit 1
+            fi
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          case $GITHUB_REF_NAME in *-rc.*) pre=true ;; *) pre=false ;; esac
+          echo "pre-release=$pre" >> "$GITHUB_OUTPUT"
+          echo "$id $version, $([ $pre = true ] && echo pre-release || echo release)"
+
+  tests:
+    needs: version
+    uses: ./.github/workflows/test.yml
+
+  publish:
+    needs: [version, tests]
+    runs-on: ubuntu-latest
+    environment: marketplace # the federated credential trusts this environment only
+    permissions:
+      contents: write # the GitHub release
+      id-token: write # GitHub's OIDC token, exchanged for Entra ID's
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      VSIX: meridian-studio-${{ needs.version.outputs.version }}.vsix
+      PRE_RELEASE: ${{ needs.version.outputs.pre-release == 'true' && 'true' || '' }} # empty for a release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bunx vsce package --no-dependencies ${PRE_RELEASE:+--pre-release} --out "$VSIX"
+      - name: The subject the federated credential must name
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          curl -sSf -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" \
+            | node -e 'const t = JSON.parse(require("fs").readFileSync(0)).value; console.log(JSON.parse(Buffer.from(t.split(".")[1], "base64url")).sub)'
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+      - name: The identity's ID, a member of the publisher, and its rights
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          az rest --url 'https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1-preview.3' \
+            --resource 499b84ac-1321-427f-aa17-267ca6975798 --query id --output tsv
+          bunx vsce verify-pat "$(jq -r .publisher package.json)" --azure-credential
+      - name: Publish to the Marketplace
+        if: github.event_name == 'push'
+        # --skip-duplicate: this job run again, once published; the version job stopped any other duplicate
+        run: bunx vsce publish --azure-credential --packagePath "$VSIX" ${PRE_RELEASE:+--pre-release} --skip-duplicate
+      - name: The GitHub release, with the .vsix
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          awk -v head="## $VERSION" '$0 == head { on = 1; next } /^## / { on = 0 } on' CHANGELOG.md > notes.md
+          if [ -s notes.md ]; then notes=(--notes-file notes.md); else notes=(--generate-notes); fi
+          gh release create "$GITHUB_REF_NAME" "$VSIX" --verify-tag --title "$GITHUB_REF_NAME" ${PRE_RELEASE:+--prerelease} "${notes[@]}"

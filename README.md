@@ -272,7 +272,10 @@ names Meridian's API, then what it would be here: a YAML key, a check in Problem
 - `bun run test:vscode`: the extension in a real VS Code with the YAML extension (both downloaded into `.vscode-test/`
   the first time; on Linux without a display, `xvfb-run -a bun run test:vscode`). Its data checks part needs
   `uv sync --project runner`.
-- CI (`.github/workflows/test.yml`) runs both on every push.
+- CI (`.github/workflows/test.yml`) runs both on every push to a branch, and on a tag before its release.
+- A tag publishes to the Marketplace once its tests pass: `v0.4.0` a release, `v0.3.0-rc.1` a pre-release
+  (`.github/workflows/release.yml`, signed in through Microsoft Entra ID, no token; setup in the documentation's
+  [Development](https://lgrosjean.github.io/meridian-studio/development/#releases) page).
 - `bun run docs` serves the documentation site (`docs/`, built by [Zensical](https://zensical.org)) at
   http://localhost:8000; `bun run docs:build` builds it, failing on a broken link or an undocumented key. It is
   published to GitHub Pages from `main` (`.github/workflows/docs.yml`).

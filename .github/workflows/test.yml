@@ -1,11 +1,14 @@
-# Every test, on every push and on pull requests from forks (one from a branch here already ran on its push).
+# Every test, on every push to a branch, on pull requests from forks (one from a branch here already ran on its push)
+# and before a release: release.yml calls it on the tag, which a push of tags does not run here.
 # extension: types, bundle, the tree's and the dataset helper's logic. runner: the data checks, then a tiny fit and an
 # optimization (Meridian on CPU). vscode: the extension in a real VS Code, data checks included.
 name: tests
 on:
   push:
+    branches: ['**']
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 concurrency:
   group: tests-${{ github.ref }}
