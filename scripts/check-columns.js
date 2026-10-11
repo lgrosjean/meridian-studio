@@ -16,7 +16,7 @@ const vscode = {
 }
 const load = Module._load
 Module._load = (request, ...rest) => (request === 'vscode' ? vscode : load(request, ...rest))
-const { _columnsOf, _priorsOf, _modelChildren, _folderChildren, _referenceIn, _wordRange, _withoutChecks, _dataset: D, _csv } = require('../out/extension.js')
+const { _columnsOf, _priorsOf, _modelChildren, _folderChildren, _referenceIn, _wordRange, _withoutSettings, _dataset: D, _csv } = require('../out/extension.js')
 
 const cols = Object.fromEntries(_columnsOf('synthetic').map((c) => [c.label, c]))
 assert.equal(cols.time.description, 'time')
@@ -151,7 +151,10 @@ assert.deepEqual(D.suggest(checked.replace('|', ''), checked.indexOf('|'), csv).
 const typo = head + '  kpi: sales\nchecks:\n  columns:\n    Sales: { ignore: [K002] }\n'
 assert.deepEqual(D.check(typo, csv).filter((p) => p.message.includes('no check')).map((p) => [p.message, p.fixes.map((f) => f.title)]), [['Sales is not a column of this dataset: no check runs on it', ['Replace with sales']]])
 // Which checks are off is not data: a fit stays current when they change.
-assert.equal(_withoutChecks('csv: a.csv\nchecks:\n  ignore: [S001]\n\n  columns: {}\ncoord_to_columns: {}\n'), 'csv: a.csv\ncoord_to_columns: {}\n')
-assert.equal(_withoutChecks('csv: a.csv\nchecks: { ignore: [S001] }\n'), 'csv: a.csv\n')
-assert.equal(_withoutChecks('csv: a.csv\n'), 'csv: a.csv\n')
+assert.equal(_withoutSettings('csv: a.csv\nchecks:\n  ignore: [S001]\n\n  columns: {}\ncoord_to_columns: {}\n'), 'csv: a.csv\ncoord_to_columns: {}\n')
+assert.equal(_withoutSettings('csv: a.csv\nchecks: { ignore: [S001] }\n'), 'csv: a.csv\n')
+assert.equal(_withoutSettings('csv: a.csv\n'), 'csv: a.csv\n')
+// Nor is how a fit is logged.
+assert.equal(_withoutSettings('dataset: d\nmlflow:\n  run_name: "{model}"\n  tags: { owner: me }\nsampling: {}\n'), 'dataset: d\nsampling: {}\n')
+assert.equal(_withoutSettings('dataset: d\nmlflow: { autolog: false }\nmlflow_x: 1\n'), 'dataset: d\nmlflow_x: 1\n')
 console.log('ok')
