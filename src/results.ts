@@ -39,8 +39,10 @@ function reviewBody(r?: Review): string {
   const rows = r.checks
     .map((c) => `<tr><td>${esc(c.title)}</td><td class="${c.status}">${MARK[c.status] ?? esc(c.status)}</td><td class="text">${esc(c.text)}</td></tr>`)
     .join('')
+  // Meridian passes a fit whose checks only ask for a review: its summary reads in the colour of the worst check
+  const worst = r.checks.some((c) => c.status === 'fail') ? 'fail' : r.checks.some((c) => c.status === 'review') ? 'review' : r.status
   return `<h2>Model health</h2>
-  <p><span class="${r.status}">${esc(r.summary)}</span> <span class="dim">Meridian's review of the fit; what did not pass is also in Problems.</span></p>
+  <p><span class="${worst}">${esc(r.summary)}</span> <span class="dim">Meridian's review of the fit; what did not pass is also in Problems.</span></p>
   <table><thead><tr><th>Check</th><th>Status</th><th>What Meridian says</th></tr></thead><tbody>${rows}</tbody></table>`
 }
 
