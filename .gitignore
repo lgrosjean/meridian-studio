@@ -18,3 +18,6 @@ examples/**/*.runs.jsonl
 /scenarios/
 examples/**/*.run.json
 examples/models/test.*
+# the documentation site, built by Zensical (bun run docs:build), and its cache
+/site/
+/.cache/

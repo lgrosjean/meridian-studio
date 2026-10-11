@@ -323,7 +323,9 @@
     "package": "vsce package --no-dependencies",
     "publish": "vsce publish --no-dependencies",
     "test": "bun run typecheck && bun run build && node scripts/check-columns.js && uv run --project runner runner/test_runner.py",
-    "test:vscode": "bun run build && node test/vscode/run.js"
+    "test:vscode": "bun run build && node test/vscode/run.js",
+    "docs": "uvx zensical@0.0.69 serve",
+    "docs:build": "uvx zensical@0.0.69 build --strict --clean && node scripts/check-docs.js"
   },
   "devDependencies": {
     "@types/node": "^22",

@@ -6,6 +6,10 @@ scripts/**
 test/**
 .vscode-test/**
 examples/**
+docs/**
+mkdocs.yml
+site/**
+.cache/**
 node_modules/**
 out/**/*.map
 runner/.venv/**
