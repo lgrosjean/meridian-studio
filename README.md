@@ -1,5 +1,7 @@
 # Meridian Studio
 
+[![tests](https://github.com/lgrosjean/meridian-studio/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/lgrosjean/meridian-studio/actions/workflows/test.yml)
+
 > **Unofficial community project.** Not affiliated with, endorsed by or sponsored by Google.
 > Meridian and the Meridian logo are trademarks of Google LLC. Google's own product named Meridian Studio
 > is at https://developers.google.com/meridian/studio; this extension is unrelated.
